@@ -1,0 +1,7 @@
+[project]
+name = "voicelab-gpt-sovits"
+version = "0.1.0"
+description = "VoiceLab workflow: GPT-SoVITS (skeleton)"
+requires-python = ">=3.10"
+dependencies = []
+

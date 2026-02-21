@@ -1,0 +1,7 @@
+[project]
+name = "voicelab-rvc"
+version = "0.1.0"
+description = "VoiceLab workflow: RVC (skeleton)"
+requires-python = ">=3.10"
+dependencies = []
+

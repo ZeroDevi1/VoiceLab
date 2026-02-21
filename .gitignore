@@ -1,0 +1,27 @@
+## Vendor repos (never tracked)
+vendor/
+
+## Virtual envs
+**/.venv/
+
+## Large training artifacts (never tracked)
+workflows/**/data/
+workflows/**/exp/
+workflows/**/pretrained_models/
+workflows/**/tensorboard/
+workflows/**/out_wav/
+
+## Caches
+**/__pycache__/
+**/.cache/
+**/.pytest_cache/
+**/.ipynb_checkpoints/
+**/.mypy_cache/
+**/.ruff_cache/
+
+## OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

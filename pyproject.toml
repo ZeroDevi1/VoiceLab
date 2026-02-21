@@ -1,0 +1,10 @@
+[project]
+name = "voicelab"
+version = "0.1.0"
+description = "VoiceLab workspace bootstrap (vendor sync + per-workflow uv envs)"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+package = false
+
