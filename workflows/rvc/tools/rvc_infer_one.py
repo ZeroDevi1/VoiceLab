@@ -22,7 +22,7 @@ def _default_output(input_path: Path, *, pitch: int) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Infer one file with a trained RVC model (RMVPE locked).")
     ap.add_argument("--exp-name", default="xingtong_v2_48k_f0", help="Model/index prefix.")
-    ap.add_argument("--input", default="/mnt/c/AIGC/炫神/马头有大！马头来了！.mp3")
+    ap.add_argument("--input", default="/mnt/c/AIGC/炫神/马头有大马头来了_karaoke_noreverb_dry.wav")
     ap.add_argument("--output", default=None)
 
     ap.add_argument("--pitch", type=int, default=12, help="Pitch shift in semitones (+12 is one octave up).")
@@ -62,7 +62,7 @@ def main() -> int:
     # Required by upstream VC.get_vc() and index lookup helper.
     os.environ["weight_root"] = str((rt / "assets" / "weights").resolve())
     os.environ["index_root"] = str((rt / "indices").resolve())
-    # Required by upstream RMVPE f0 extraction in the inference pipeline.
+    # Required by upstream RMVPE inference (see runtime/infer/modules/vc/pipeline.py).
     os.environ["rmvpe_root"] = str((rt / "assets" / "rmvpe").resolve())
 
     try:
