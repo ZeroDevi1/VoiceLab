@@ -5,6 +5,7 @@ vendor/
 **/.venv/
 
 ## Large training artifacts (never tracked)
+datasets/
 workflows/**/data/
 workflows/**/exp/
 workflows/**/pretrained_models/
@@ -24,4 +25,3 @@ workflows/**/out_wav/
 Thumbs.db
 .vscode/
 .idea/
-

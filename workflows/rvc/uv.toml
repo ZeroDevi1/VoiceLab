@@ -1,0 +1,19 @@
+# uv config for this workflow.
+#
+# Why this exists:
+# - RVC training/inference needs GPU wheels for torch/torchaudio/torchvision.
+# - Some environments require using PyTorch's wheel index.
+#
+# If your network cannot access these indexes, set them via env vars or edit this file.
+
+index-strategy = "unsafe-best-match"
+
+[[index]]
+url = "https://pypi.org/simple"
+
+[[index]]
+url = "https://download.pytorch.org/whl/cu121"
+
+[[index]]
+url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/"
+
