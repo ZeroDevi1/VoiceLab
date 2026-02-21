@@ -22,6 +22,14 @@ def _default_output(input_path: Path, *, pitch: int) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Infer one file with a trained RVC model (RMVPE locked).")
     ap.add_argument("--exp-name", default="xingtong_v2_48k_f0", help="Model/index prefix.")
+    ap.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Optional explicit model path or filename under runtime/assets/weights/. "
+            "If omitted, uses <exp-name>.pth."
+        ),
+    )
     ap.add_argument("--input", default="/mnt/c/AIGC/炫神/马头有大马头来了_karaoke_noreverb_dry.wav")
     ap.add_argument("--output", default=None)
 
@@ -31,10 +39,22 @@ def main() -> int:
     ap.add_argument("--resample-sr", type=int, default=0)
     ap.add_argument("--rms-mix-rate", type=float, default=0.25)
     ap.add_argument("--protect", type=float, default=0.33)
+    ap.add_argument(
+        "--no-normalize",
+        action="store_true",
+        help="Disable peak-normalization (default is enabled to avoid silent/clipped output).",
+    )
+    ap.add_argument(
+        "--subtype",
+        default="PCM_16",
+        choices=["PCM_16", "FLOAT"],
+        help="Output WAV subtype. PCM_16 is the most compatible with players/editors.",
+    )
 
     ap.add_argument("--device", default=None, help="Override device (e.g. cuda:0 / cpu).")
     ap.add_argument("--is-half", action="store_true", default=True, help="Use FP16 where applicable.")
     args = ap.parse_args()
+    normalize = not bool(args.no_normalize)
 
     rt = init_runtime(force=False, assets_src=None)
     ensure_runtime_pythonpath()
@@ -45,10 +65,18 @@ def main() -> int:
     # Prevent upstream Config() from parsing this script's CLI args.
     sys.argv = sys.argv[:1]
 
-    model_path = rt / "assets" / "weights" / f"{args.exp_name}.pth"
+    weights_dir = rt / "assets" / "weights"
+    model_path = Path(args.model) if args.model else (weights_dir / f"{args.exp_name}.pth")
+    if not model_path.is_absolute():
+        # Treat as a filename under weights_dir.
+        model_path = (weights_dir / model_path).resolve()
     index_path = rt / "indices" / f"{args.exp_name}.index"
     if not model_path.exists():
-        raise SystemExit(f"Model not found: {model_path}\nRun: uv run python tools/rvc_train.py")
+        raise SystemExit(
+            f"Model not found: {model_path}\n"
+            "Run: uv run python tools/rvc_train.py\n"
+            "Or pass --model <filename.pth> (saved under runtime/assets/weights/)."
+        )
     if not index_path.exists():
         raise SystemExit(f"Index not found: {index_path}\nRun: uv run python tools/rvc_train_index.py")
 
@@ -102,7 +130,27 @@ def main() -> int:
     if sr is None or audio is None:
         raise SystemExit(f"Inference failed:\n{info}")
 
-    sf.write(str(out_path), audio, int(sr), subtype="FLOAT")
+    # Upstream pipeline sometimes returns int16-scaled float arrays (range ~[-32768, 32767]).
+    # Writing those as FLOAT produces extreme clipping / "electric noise". Normalize to [-1, 1].
+    import numpy as np
+
+    y = np.asarray(audio)
+    if y.ndim > 1:
+        y = y.mean(axis=1)
+    y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+    absmax = float(np.max(np.abs(y))) if y.size else 0.0
+    if absmax > 1.5:
+        # Heuristic: treat as int16-scaled audio if within a plausible range.
+        if absmax <= 40000:
+            y = y / 32768.0
+        else:
+            y = y / absmax
+    if normalize and y.size:
+        absmax2 = float(np.max(np.abs(y)))
+        if absmax2 > 0:
+            y = y * (0.95 / absmax2)
+
+    sf.write(str(out_path), y.astype(np.float32, copy=False), int(sr), subtype=str(args.subtype))
     print(info)
     print(f"[rvc] wrote: {out_path}")
     return 0

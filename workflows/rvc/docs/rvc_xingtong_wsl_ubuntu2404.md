@@ -188,6 +188,19 @@ uv run python tools/rvc_infer_one.py \
 输出：
 - `workflows/rvc/out_wav/马头有大_xingtong_pitch12.wav`
 
+> 提示：推理脚本默认会对输出做峰值归一化（避免“几乎没声音”或“爆音电流声”）。如需关闭可加 `--no-normalize`。
+
+如果你在训练中开启了 `--save-every-weights 1`，会在 `runtime/assets/weights/` 下生成按 epoch/step 命名的权重文件，
+可用 `--model` 指定某个权重来做盲测对比：
+
+```bash
+uv run python tools/rvc_infer_one.py \
+  --exp-name xingtong_v2_48k_f0 \
+  --model xingtong_v2_48k_f0_e30_s123456.pth \
+  --pitch 12 \
+  --index-rate 0.8
+```
+
 ## 7. 参数调优建议（只讲关键）
 - `--pitch`（变调，半音）
   - 男 -> 女：优先在 `+10 ~ +15` 范围内试
