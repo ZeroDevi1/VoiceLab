@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,10 +13,10 @@ from rvc_stage_dataset import stage_dataset
 from voicelab_bootstrap import voicelab_root
 
 
-def _run(cmd: list[str], *, cwd: Path) -> None:
+def _run(cmd: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
     # Keep stdout/stderr attached for long-running training.
     print("[rvc] $", " ".join(cmd))
-    subprocess.run(cmd, cwd=str(cwd), check=True)
+    subprocess.run(cmd, cwd=str(cwd), check=True, env=env)
 
 
 def _exp_dir(rt: Path, exp_name: str) -> Path:
@@ -152,11 +153,20 @@ def main() -> int:
     ap.add_argument("--skip-feature", action="store_true")
     ap.add_argument("--skip-filelist", action="store_true")
     ap.add_argument("--skip-train", action="store_true")
+    ap.add_argument(
+        "--quiet-warnings",
+        action="store_true",
+        help="Suppress noisy FutureWarning/UserWarning from upstream scripts (does not affect training).",
+    )
 
     args = ap.parse_args()
 
     # Ensure runtime exists and is correctly wired.
     rt = init_runtime(force=False, assets_src=None)
+    run_env = os.environ.copy()
+    if args.quiet_warnings:
+        # Keep stderr clean; upstream prints lots of harmless deprecation warnings on newer torch.
+        run_env["PYTHONWARNINGS"] = "ignore::FutureWarning,ignore::UserWarning"
 
     dataset_dir = Path(args.dataset_dir).expanduser()
     # Only validate/copy dataset when we actually need to preprocess.
@@ -196,6 +206,7 @@ def main() -> int:
                 str(float(args.per)),
             ],
             cwd=rt,
+            env=run_env,
         )
 
     # Step 2: extract f0 (RMVPE GPU)
@@ -211,6 +222,7 @@ def main() -> int:
                 "True",  # is_half
             ],
             cwd=rt,
+            env=run_env,
         )
 
     # Step 3: extract hubert features
@@ -228,6 +240,7 @@ def main() -> int:
                 "True",  # is_half
             ],
             cwd=rt,
+            env=run_env,
         )
 
     # Step 4: config + filelist
@@ -278,6 +291,7 @@ def main() -> int:
                 args.version,
             ],
             cwd=rt,
+            env=run_env,
         )
 
     model_pth = rt / "assets" / "weights" / f"{args.exp_name}.pth"

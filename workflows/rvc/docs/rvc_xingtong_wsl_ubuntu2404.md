@@ -128,6 +128,18 @@ uv run python tools/rvc_train.py \
 显存不够（RTX3060 Laptop 6GB）时：
 - `--batch-size 4` 降到 `--batch-size 2`
 
+### 训练日志里大量 FutureWarning / UserWarning
+
+例如：
+- `torch.cuda.amp.autocast(args...) is deprecated ...`
+- `torch.load(weights_only=False) ...`
+
+这些通常只是 PyTorch 版本升级导致的弃用提示，不影响训练。如果你想让日志更干净，可以在训练命令加上：
+
+```bash
+uv run python tools/rvc_train.py --quiet-warnings ...
+```
+
 ## 4. 训练星瞳模型（阶段 2：继续到 200 epoch）
 
 RVC 上游训练脚本会在 `runtime/logs/xingtong_v2_48k_f0/` 内自动发现 `G_*.pth/D_*.pth` 并 resume。
