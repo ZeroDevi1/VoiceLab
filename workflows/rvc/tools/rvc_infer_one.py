@@ -38,6 +38,9 @@ def main() -> int:
 
     rt = init_runtime(force=False, assets_src=None)
     ensure_runtime_pythonpath()
+    # Upstream RVC uses lots of relative paths like `configs/...`, `assets/...`, `logs/...`.
+    # Ensure we run from the runtime root so `Config()` and VC pipeline can find files.
+    os.chdir(rt)
 
     # Prevent upstream Config() from parsing this script's CLI args.
     sys.argv = sys.argv[:1]
@@ -59,6 +62,8 @@ def main() -> int:
     # Required by upstream VC.get_vc() and index lookup helper.
     os.environ["weight_root"] = str((rt / "assets" / "weights").resolve())
     os.environ["index_root"] = str((rt / "indices").resolve())
+    # Required by upstream RMVPE f0 extraction in the inference pipeline.
+    os.environ["rmvpe_root"] = str((rt / "assets" / "rmvpe").resolve())
 
     try:
         from configs.config import Config  # type: ignore

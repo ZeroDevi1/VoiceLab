@@ -26,11 +26,13 @@ dependencies = [
   # Misc
   "python-dotenv>=1.0.0",
   "tensorboard>=2.14.0",
+  "tensorboardX>=2.6.2.2",
   "matplotlib==3.7.5",
   # librosa==0.9.1 (and some upstream code) imports pkg_resources; newer setuptools removed it.
   "setuptools==69.5.1",
   "wheel>=0.46.3",
   "packaging>=26.0",
+  "torchcrepe>=0.0.24",
 ]
 
 [tool.uv]
