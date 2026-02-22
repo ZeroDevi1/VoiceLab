@@ -339,19 +339,18 @@ TXT
 
 ```bash
 cd "$WORKFLOW_DIR"
-uv run python tools/infer_xuan_sft.py \
+uv run python tools/infer_sft.py \
   --model_dir pretrained_models/Fun-CosyVoice3-0.5B-dream-sft \
   --spk_id dream \
   --text_file out_wav/dream_quote/input.txt \
   --out_dir out_wav/dream_quote \
   --speed 1.0 \
-  --prompt_text "You are a helpful assistant.<|endofprompt|>" \
-  --concat
+  --prompt_text "你太入迷了。<|endofprompt|>"
 ```
 
 输出：
 
-- `out_wav/dream_quote/full.wav`
+- `out_wav/dream_quote/chunk_0000.wav`
 
 ### 10.2 用“训练过程中分数最高（CV loss 最低）”的 LLM 做试听
 
@@ -359,38 +358,118 @@ uv run python tools/infer_xuan_sft.py \
 
 ```bash
 cd "$WORKFLOW_DIR"
-uv run python tools/infer_xuan_sft.py \
+uv run python tools/infer_sft.py \
   --model_dir pretrained_models/Fun-CosyVoice3-0.5B-dream-sft \
   --spk_id dream \
   --text_file out_wav/dream_quote/input.txt \
   --out_dir out_wav/dream_quote_bestllm_fixed \
   --llm_ckpt exp/dream_sft/llm/torch_ddp/epoch_5_whole.pt \
-  --no_split \
-  --concat
+  --prompt_text "你太入迷了。<|endofprompt|>"
 ```
 
 输出：
 
-- `out_wav/dream_quote_bestllm_fixed/full.wav`
+- `out_wav/dream_quote_bestllm_fixed/chunk_0000.wav`
 
 ### 10.3 常见补救：保留 SFT LLM，但回退 base flow（更清晰更稳）
 
 ```bash
 cd "$WORKFLOW_DIR"
-uv run python tools/infer_xuan_sft.py \
+uv run python tools/infer_sft.py \
   --model_dir pretrained_models/Fun-CosyVoice3-0.5B-dream-sft \
   --spk_id dream \
   --text_file out_wav/dream_quote/input.txt \
   --out_dir out_wav/dream_quote_bestllm_baseflow \
   --llm_ckpt  exp/dream_sft/llm/torch_ddp/epoch_5_whole.pt \
   --flow_ckpt pretrained_models/Fun-CosyVoice3-0.5B/flow.pt \
-  --no_split \
-  --concat
+  --prompt_text "你太入迷了。<|endofprompt|>"
 ```
 
 输出：
 
-- `out_wav/dream_quote_bestllm_baseflow/full.wav`
+- `out_wav/dream_quote_bestllm_baseflow/chunk_0000.wav`
+
+### 10.4 经验基线命令（“基准口味”：base flow + best LLM + prompt_short + sampling06k10 + speed=0.95）
+
+> 注意：此处**不记录任何具体推理文本**；请自行把要合成的内容写入 `<TEXT_FILE>`（UTF-8）。
+
+```bash
+cd "$WORKFLOW_DIR"
+
+#（可选）避免 ORT CUDA provider 缺库导致的不稳定噪声
+export COSYVOICE_ORT_FORCE_CPU=1
+
+uv run python tools/infer_sft.py \
+  --model_dir pretrained_models/Fun-CosyVoice3-0.5B-dream-sft \
+  --spk_id dream \
+  --text_file <TEXT_FILE> \
+  --out_dir <OUT_DIR> \
+  --llm_ckpt  exp/dream_sft/llm/torch_ddp/epoch_5_whole.pt \
+  --flow_ckpt pretrained_models/Fun-CosyVoice3-0.5B/flow.pt \
+  --prompt_text "你太入迷了。<|endofprompt|>" \
+  --speed 0.95 \
+  --seed 1986 \
+  --temperature 1.0 \
+  --top_p 0.6 \
+  --top_k 10 \
+  --win_size 10 \
+  --tau_r 1.0
+```
+
+### 10.5（推荐）手工分段 + `guide_prefix`：每段前面都加“引导 prompt”（后期手工剪掉引导段）
+
+> 适用：你想要“多段合成 + 情绪一致”，但又不希望脚本自动拆分导致情绪漂移。  
+> `tools/infer_sft.py` **永远不做自动拆分**；请你自行把长文本切成多个小段（多个 txt 文件或多次命令），每段单独推理。
+
+```bash
+cd "$WORKFLOW_DIR"
+uv run python tools/infer_sft.py \
+  --model_dir pretrained_models/Fun-CosyVoice3-0.5B-dream-sft \
+  --spk_id dream \
+  --text_file <SEGMENT_TEXT_FILE> \
+  --out_dir <SEGMENT_OUT_DIR> \
+  --llm_ckpt  exp/dream_sft/llm/torch_ddp/epoch_5_whole.pt \
+  --flow_ckpt pretrained_models/Fun-CosyVoice3-0.5B/flow.pt \
+  --prompt_text "<PROMPT_TEXT><|endofprompt|>" \
+  --prompt_strategy guide_prefix \
+  --guide_sep "。 " \
+  --speed 1.02 \
+  --seed 1986 \
+  --temperature 1.0 \
+  --top_p 0.75 \
+  --top_k 20 \
+  --win_size 10 \
+  --tau_r 1.0
+```
+
+说明：
+- 每次运行只输出一个音频文件：`chunk_0000.wav`（位于 `<SEGMENT_OUT_DIR>`）。
+- 每段的开头都会朗读一遍“引导 prompt”（来自 `--prompt_text`，脚本会自动去掉其中的 `<|endofprompt|>`），你可以后期把引导段裁掉再自行拼接。
+
+### 10.6（可选）直接用 `--text` 传入文本 + 用 `--out_wav` 精确指定输出文件名（run.json 不落盘原文）
+
+```bash
+cd "$WORKFLOW_DIR"
+uv run python tools/infer_sft.py \
+  --model_dir pretrained_models/Fun-CosyVoice3-0.5B-dream-sft \
+  --spk_id dream \
+  --text "<TEXT>" \
+  --out_wav <OUT_WAV> \
+  --llm_ckpt  exp/dream_sft/llm/torch_ddp/epoch_5_whole.pt \
+  --flow_ckpt pretrained_models/Fun-CosyVoice3-0.5B/flow.pt \
+  --prompt_text "<PROMPT_TEXT><|endofprompt|>" \
+  --speed 0.95 \
+  --seed 1986 \
+  --temperature 1.0 \
+  --top_p 0.6 \
+  --top_k 10 \
+  --win_size 10 \
+  --tau_r 1.0
+```
+
+说明：
+- 传入 `--out_wav` 会把本次单段推理的输出音频写到该路径（文件名任意，不再存在 “full.wav 拼接” 的概念）。
+- `run.json`（以及 `--stream` 时的 `piece_*.wav`）会写入 `--out_wav` 的父目录（例如 `<OUT_WAV>` 的父目录）。
 
 ---
 
@@ -406,20 +485,21 @@ ModuleNotFoundError: No module named 'cosyvoice'
 
 修复：`workflows/cosyvoice/tools/voicelab_bootstrap.py` 中把 `voicelab_root()` 修正为 `workflow_root().parents[1]`。
 
-### 11.2 `tools/infer_xuan_sft.py` 的 `--no_split` 逻辑 bug
+### 11.2 `tools/infer_sft.py` 的逐字符合成 bug（split=False 返回值误迭代）
 
 问题：上游 `frontend.text_normalize(..., split=False)` 返回的是 **string**，如果直接 `for seg in ...` 会变成“按字符迭代”，导致：
 
 - 生成大量 `chunk_00xx.wav`
-- `full.wav` 拼接结果混乱，像“说不明白”
+- 合成输出呈现“逐字拼接”的错乱听感（像“说不明白”）
 
-修复：`workflows/cosyvoice/tools/infer_xuan_sft.py` 将 split=False 的返回值包装成单元素 list，并且在非 stream 模式下只保存每个 segment 的一个 chunk。
+修复：`workflows/cosyvoice/tools/infer_sft.py` 将 split=False 的返回值包装成单元素 list，并强制单段推理输出（避免任何自动拆分）。
 
 同时新增能力：
 
 - `--llm_ckpt`：热加载某个 LLM epoch（试听 best epoch）
 - `--flow_ckpt`：热加载 Flow（用于 “SFT LLM + base flow” 对比）
 - `--text_frontend/--no-text_frontend`：控制 wetext 归一化
+- **永远不自动拆分文本**：推理始终以单段进行，避免分句导致情绪漂移（分段由用户自行处理）
 
 ### 11.3 ORT CUDA provider 缺库
 
@@ -442,9 +522,8 @@ export COSYVOICE_ORT_FORCE_CPU=1
 ## 12) 结果与下一步建议（基于本次现象）
 
 - 如果出现“合成不自然/不连贯/吐字怪”，优先做两件事：
-  1) 用 `--no_split` 保证整段文本单段推理（避免分句带来的风格跳变）
+  1) 保持“单段推理”（`tools/infer_sft.py` 默认行为；如需分段请手工分段）
   2) 用 `--flow_ckpt pretrained_models/Fun-CosyVoice3-0.5B/flow.pt` 回退 base flow（小数据训 flow 容易把清晰度训坏）
 - 如果仍然“说不清楚”，大概率是训练语料文本质量/数量不足：
   - 增加更干净的语音（去噪/去混响/去 BGM）
   - 手工校对转写文本（尤其是专有名词、口癖、连读）
-

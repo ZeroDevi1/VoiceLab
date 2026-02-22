@@ -322,7 +322,7 @@ uv run python tools/make_spk2info_from_spk2embedding.py \
 ```bash
 cd "$WORKFLOW_DIR"
 echo "你好，这是一个推理测试。" > input.txt
-uv run python tools/infer_xuan_sft.py \
+uv run python tools/infer_sft.py \
   --model_dir pretrained_models/Fun-CosyVoice3-0.5B-xuan-sft \
   --spk_id xuan \
   --text_file ./input.txt \
@@ -331,7 +331,7 @@ uv run python tools/infer_xuan_sft.py \
 
 > SFT 推理不需要“参考音频”。只要 `--model_dir` 里有 `spk2info.pt`，且包含 `spk_id=xuan` 的 embedding，就可以直接合成。
 >
-> 另外：CosyVoice3 的 LLM 推理需要 `prompt_text` 中包含特殊 token `<|endofprompt|>`（训练时的 `instruct`）。本仓库提供的推理脚本已默认注入 `You are a helpful assistant.<|endofprompt|>`，无需你手动拼接到正文里。
+> 另外：CosyVoice3 的 LLM 推理需要 `prompt_text` 或正文中包含特殊 token `<|endofprompt|>`（训练时的 `instruct`）。`tools/infer_sft.py` 默认注入最小 marker：`<|endofprompt|>`（减少 prompt 泄露）；如需更强情绪引导可显式传 `--prompt_text \"...<|endofprompt|>\"`。
 
 ### 8.1（可选）一键生成固定测试句
 
