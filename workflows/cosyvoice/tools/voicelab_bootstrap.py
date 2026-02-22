@@ -12,7 +12,10 @@ def workflow_root() -> Path:
 
 def voicelab_root() -> Path:
     # .../VoiceLab/workflows/cosyvoice -> .../VoiceLab
-    return workflow_root().parents[2]
+    # workflow_root() is ".../VoiceLab/workflows/cosyvoice"
+    # parents[0] = ".../VoiceLab/workflows"
+    # parents[1] = ".../VoiceLab"
+    return workflow_root().parents[1]
 
 
 def cosyvoice_vendor_root() -> Path:
@@ -48,4 +51,3 @@ def ensure_sys_path() -> dict[str, Path]:
         sys.path.insert(0, str(matcha))
 
     return {"workflow": wf, "vendor": vendor, "matcha": matcha}
-
