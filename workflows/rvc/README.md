@@ -6,17 +6,23 @@
 
 ## 快速开始（WSL / Ubuntu 24.04）
 
+> 提示：本文档使用 `$VOICELAB_DIR` 指向 VoiceLab 仓库根目录（不要求固定路径）。如果你在仓库根目录，可先执行：
+>
+> ```bash
+> export VOICELAB_DIR="$PWD"
+> ```
+
 1) 同步 vendor（会 clone/pull 上游仓库；你当前工作区已存在 `vendor/Retrieval-based-Voice-Conversion-WebUI`）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab
+cd "$VOICELAB_DIR"
 uv run -m voicelab vendor sync
 ```
 
 2) 初始化 RVC workflow 环境（建议 Python 3.10；若本机没有，可用 uv 管理）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv python install 3.10
 uv python pin 3.10
 uv sync
@@ -34,7 +40,7 @@ uv run python tools/rvc_init_runtime.py
 `*_vocals_karaoke_noreverb_dry.wav`，再把它作为 RVC 的输入。
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/msst
+cd "$VOICELAB_DIR/workflows/msst"
 uv sync
 uv run python tools/msst_init_runtime.py
 uv run python tools/msst_process_chain.py --input /path/to/song.wav

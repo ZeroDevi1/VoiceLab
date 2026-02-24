@@ -9,10 +9,24 @@
 
 > 说明：RVC 依赖链对 Python 版本比较敏感。这里固定使用 **Python 3.10**（`requires-python = ">=3.10,<3.11"`）。
 
+## 0.1 路径约定（避免强依赖本机固定目录）
+
+本文档不要求你把仓库放在固定路径（例如 `~/AntiGravityProjects/VoiceLab`）。只要你在仓库根目录执行过：
+
+```bash
+export VOICELAB_DIR="$PWD"
+```
+
+如果你不确定当前是否在仓库根目录，可以用：
+
+```bash
+export VOICELAB_DIR="$(git rev-parse --show-toplevel)"
+```
+
 ## 1. 初始化 Python 环境（uv）
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 
 # 没有本地 python3.10 的情况下，用 uv 下载并 pin
 uv python install 3.10
@@ -52,7 +66,7 @@ RVC 上游脚本里大量使用相对路径（例如 `assets/hubert/hubert_base.
 执行：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_init_runtime.py
 ```
 
@@ -74,16 +88,16 @@ WSL2 访问 Windows 文件系统（`/mnt/c/...`）会有明显的 9P I/O 开销�
 推荐把数据集复制到 WSL 的 ext4（例如 VoiceLab 下的 `datasets/`）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_stage_dataset.py \
   --src /mnt/c/AIGC/数据集/XingTong \
-  --dst ~/AntiGravityProjects/VoiceLab/datasets/XingTong
+  --dst "$VOICELAB_DIR/datasets/XingTong"
 ```
 
 之后训练时直接指向 WSL 路径即可：
 
 ```bash
-uv run python tools/rvc_train.py --dataset-dir ~/AntiGravityProjects/VoiceLab/datasets/XingTong
+uv run python tools/rvc_train.py --dataset-dir "$VOICELAB_DIR/datasets/XingTong"
 ```
 
 也可以让训练脚本自动复制（只影响 preprocess 阶段；后续训练 I/O 都在 `workflows/rvc/runtime/logs`）：
@@ -95,14 +109,14 @@ uv run python tools/rvc_train.py --stage-dataset
 ## 3. 训练星瞳模型（阶段 1：先跑通全链路 50 epoch）
 
 数据集：
-- `~/AntiGravityProjects/VoiceLab/datasets/XingTong`（约 1500 条 wav，WSL 原生路径，推荐）
+- `$VOICELAB_DIR/datasets/XingTong`（约 1500 条 wav，WSL 原生路径，推荐）
 
 执行：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train.py \
-  --dataset-dir ~/AntiGravityProjects/VoiceLab/datasets/XingTong \
+  --dataset-dir "$VOICELAB_DIR/datasets/XingTong" \
   --exp-name xingtong_v2_48k_f0 \
   --total-epoch 50 \
   --batch-size 4 \
@@ -145,9 +159,9 @@ uv run python tools/rvc_train.py --quiet-warnings ...
 RVC 上游训练脚本会在 `runtime/logs/xingtong_v2_48k_f0/` 内自动发现 `G_*.pth/D_*.pth` 并 resume。
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train.py \
-  --dataset-dir ~/AntiGravityProjects/VoiceLab/datasets/XingTong \
+  --dataset-dir "$VOICELAB_DIR/datasets/XingTong" \
   --exp-name xingtong_v2_48k_f0 \
   --total-epoch 200 \
   --batch-size 4 \
@@ -162,7 +176,7 @@ uv run python tools/rvc_train.py \
 该索引用于推理时的检索增强（index_rate 拉高能显著降低“电音感/撕裂”）。
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train_index.py --exp-name xingtong_v2_48k_f0
 ```
 
@@ -206,12 +220,12 @@ pitch 调整规则（可执行建议）
 - `/mnt/c/AIGC/炫神/马头有大！马头来了！.mp3`
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xingtong_v2_48k_f0 \
   --model latest \
   --input "/mnt/c/AIGC/炫神/马头有大！马头来了！.mp3" \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/马头有大_to_xingtong_pitch12_preset_speech.wav" \
+  --output "$VOICELAB_DIR/workflows/rvc/out_wav/马头有大_to_xingtong_pitch12_preset_speech.wav" \
   --pitch 12 \
   --f0-method rmvpe \
   --index-rate 0.8
@@ -223,12 +237,12 @@ uv run python tools/rvc_infer_one.py \
 - `/mnt/c/AIGC/音乐/栞/栞 - MyGO!!!!!_vocals_karaoke_noreverb_dry.wav`
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xingtong_v2_48k_f0 \
   --model latest \
   --input '/mnt/c/AIGC/音乐/栞/栞 - MyGO!!!!!_vocals_karaoke_noreverb_dry.wav' \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/shiori_mygo_to_xingtong_pitch0_preset_moreclean.wav" \
+  --output "$VOICELAB_DIR/workflows/rvc/out_wav/shiori_mygo_to_xingtong_pitch0_preset_moreclean.wav" \
   --pitch 0 \
   --f0-method crepe \
   --index-rate 0.65 \
@@ -291,7 +305,7 @@ uv run python tools/rvc_infer_one.py \
 全参数命令模板（仅供参考；把你不需要的参数删掉即可）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xingtong_v2_48k_f0 \
   --model latest \
@@ -331,7 +345,7 @@ uv run python tools/rvc_infer_one.py \
 在 `workflows/rvc/` 下运行（使用 uv 环境）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 
 # 使用 uv 环境运行 tensorboard，指向你的日志目录
 uv run tensorboard --logdir=runtime/logs/xingtong_v2_48k_f0 --host 0.0.0.0 --port 6006

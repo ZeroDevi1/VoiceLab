@@ -2,18 +2,20 @@
 
 你当前约束：
 - WSL2：Ubuntu 24.04
-- VoiceLab 主项目：`~/AntiGravityProjects/VoiceLab`
-- CosyVoice（上游 vendor）：`~/AntiGravityProjects/VoiceLab/vendor/CosyVoice`（本项目 git 忽略，可随时删/重拉）
-- 本次 workflow：`~/AntiGravityProjects/VoiceLab/workflows/cosyvoice`
+- VoiceLab 主项目：`$VOICELAB_DIR`（仓库根目录；不要求固定路径）
+- CosyVoice（上游 vendor）：`$VOICELAB_DIR/vendor/CosyVoice`（本项目 git 忽略，可随时删/重拉）
+- 本次 workflow：`$VOICELAB_DIR/workflows/cosyvoice`
 - 数据集路径：`/mnt/c/AIGC/数据集/xuan`
 
-> 性能提示：这份文档假设你已把 **workflow 与训练产物**（`data/`、`exp/`、`pretrained_models/`、`tensorboard/` 等）放在 WSL 的 Linux 文件系统（即 `~/AntiGravityProjects/VoiceLab/workflows/cosyvoice`）。这样速度通常会明显快于把这些目录放在 `/mnt/c`。  
+> 性能提示：这份文档假设你已把 **workflow 与训练产物**（`data/`、`exp/`、`pretrained_models/`、`tensorboard/` 等）放在 WSL 的 Linux 文件系统（即 `$VOICELAB_DIR/workflows/cosyvoice`）。这样速度通常会明显快于把这些目录放在 `/mnt/c`。  
 > 训练集原始 wav 仍保留在 `/mnt/c/AIGC/数据集/xuan` 属于正常做法（空间/管理方便），只是读取原始数据时仍会受到一点 `/mnt/c` IO 影响。
 
-建议先在 WSL 终端里约定几个变量（后文命令会用到）：
+建议先在 WSL 终端里约定几个变量（后文命令会用到；先确保你在 VoiceLab 仓库根目录）：
 
 ```bash
-export VOICELAB_DIR=~/AntiGravityProjects/VoiceLab
+export VOICELAB_DIR="${VOICELAB_DIR:-$PWD}"
+# 如果你不确定当前是否在仓库根目录，可用：
+# export VOICELAB_DIR="$(git rev-parse --show-toplevel)"
 export WORKFLOW_DIR="$VOICELAB_DIR/workflows/cosyvoice"
 export COSYVOICE_VENDOR_DIR="$VOICELAB_DIR/vendor/CosyVoice"
 export XUAN_WAV_DIR="/mnt/c/AIGC/数据集/xuan"

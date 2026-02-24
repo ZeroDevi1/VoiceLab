@@ -1,8 +1,8 @@
 # 在 WSL2 Ubuntu 24.04 用 uv 训练 CosyVoice 3「Dream 说话人 SFT」（LLM+Flow）全流程记录
 
 记录日期：2026-02-22  
-项目目录：`~/AntiGravityProjects/VoiceLab`  
-workflow：`~/AntiGravityProjects/VoiceLab/workflows/cosyvoice`  
+项目目录：`$VOICELAB_DIR`（VoiceLab 仓库根目录；不要求固定路径）  
+workflow：`$VOICELAB_DIR/workflows/cosyvoice`  
 数据集（原始）：`/mnt/c/AIGC/数据集/Dream`（本次实际为 28 条 mp3，最长约 24.6s）
 
 > 目标：训练出一个可复用的 **Dream 专属 CosyVoice3 SFT 模型目录**，并可对任意文本合成 Dream 声线音频。  
@@ -23,7 +23,9 @@ workflow：`~/AntiGravityProjects/VoiceLab/workflows/cosyvoice`
 在终端里统一使用：
 
 ```bash
-export VOICELAB_DIR=~/AntiGravityProjects/VoiceLab
+export VOICELAB_DIR="${VOICELAB_DIR:-$PWD}"
+# 如果你不确定当前是否在仓库根目录，可用：
+# export VOICELAB_DIR="$(git rev-parse --show-toplevel)"
 export WORKFLOW_DIR="$VOICELAB_DIR/workflows/cosyvoice"
 export COSYVOICE_VENDOR_DIR="$VOICELAB_DIR/vendor/CosyVoice"
 

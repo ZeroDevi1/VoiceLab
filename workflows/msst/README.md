@@ -15,17 +15,23 @@
 
 ## 快速开始（WSL / Ubuntu 24.04）
 
+> 提示：本文档使用 `$VOICELAB_DIR` 指向 VoiceLab 仓库根目录（不要求固定路径）。如果你在仓库根目录，可先执行：
+>
+> ```bash
+> export VOICELAB_DIR="$PWD"
+> ```
+
 1) 同步 vendor（会 clone/pull 上游仓库到 `../../vendor/`；`vendor/` 在本 repo 中被忽略）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab
+cd "$VOICELAB_DIR"
 uv run -m voicelab vendor sync
 ```
 
 2) 初始化 MSST workflow 环境（Python 3.10）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/msst
+cd "$VOICELAB_DIR/workflows/msst"
 uv python install 3.10
 uv python pin 3.10
 uv sync

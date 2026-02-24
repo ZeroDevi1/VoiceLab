@@ -8,8 +8,14 @@
 
 初始化环境（WSL 推荐 Python 3.10）：
 
+> 提示：本文档使用 `$VOICELAB_DIR` 指向 VoiceLab 仓库根目录（不要求固定路径）。如果你在仓库根目录，可先执行：
+>
+> ```bash
+> export VOICELAB_DIR="$PWD"
+> ```
+
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/cosyvoice
+cd "$VOICELAB_DIR/workflows/cosyvoice"
 uv sync
 ```
 

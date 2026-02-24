@@ -5,6 +5,6 @@
 建议把上游仓库 clone 到：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab
+cd "${VOICELAB_DIR:-$PWD}"
 uv run -m voicelab vendor sync
 ```

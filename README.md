@@ -14,17 +14,31 @@
 > 说明：`uv sync` 只负责同步 Python 依赖与虚拟环境，不支持“自动执行 git clone/pull”。  
 > 因此本项目提供 `voicelab` 小工具来同步 `vendor/`（仍然是 **零污染上游仓库**，因为 `vendor/` 整体不进 git）。
 
-1) 同步 vendor（会 clone/pull 这三个上游仓库）：
+0) Clone 后约定仓库根目录（避免强依赖本机固定路径）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab
+git clone git@github.com:ZeroDevi1/VoiceLab.git
+cd VoiceLab
+export VOICELAB_DIR="$PWD"
+```
+
+> 如果你不是在仓库根目录执行，可用：
+>
+> ```bash
+> export VOICELAB_DIR="$(git rev-parse --show-toplevel)"
+> ```
+
+1) 同步 vendor（会 clone/pull 上游仓库）：
+
+```bash
+cd "$VOICELAB_DIR"
 uv run -m voicelab init
 ```
 
 2) 初始化 CosyVoice workflow 环境：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/cosyvoice
+cd "$VOICELAB_DIR/workflows/cosyvoice"
 uv sync
 ```
 
@@ -33,7 +47,7 @@ uv sync
 新环境推荐一键初始化（vendor + uv sync + 模型下载 + runtime init）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab
+cd "$VOICELAB_DIR"
 uv run -m voicelab bootstrap
 ```
 

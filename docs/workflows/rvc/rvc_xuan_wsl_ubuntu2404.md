@@ -16,7 +16,7 @@ Windows 侧数据集：
 
 ## 1. 前置条件
 
-- 你的 VoiceLab 工作区：`~/AntiGravityProjects/VoiceLab`
+- 你的 VoiceLab 工作区：不要求固定路径（用 `$VOICELAB_DIR` 指向仓库根目录）
 - 本工作区已存在上游仓库（在 `vendor/` 下）：
   - `vendor/Retrieval-based-Voice-Conversion-WebUI`（RVC 上游）
 - 已安装：
@@ -24,12 +24,26 @@ Windows 侧数据集：
   - `uv`
 - GPU 可用：`nvidia-smi` 能看到显卡
 
+## 1.1 路径约定（避免强依赖本机固定目录）
+
+本文档默认你已经 `cd` 到 VoiceLab 仓库根目录，并约定：
+
+```bash
+export VOICELAB_DIR="$PWD"
+```
+
+如果你不确定当前是否在仓库根目录，可以用：
+
+```bash
+export VOICELAB_DIR="$(git rev-parse --show-toplevel)"
+```
+
 ## 2. 初始化 RVC workflow Python 环境（uv）
 
 RVC 依赖链对 Python 版本比较敏感，建议固定 **Python 3.10**（本 workflow 也在 `pyproject.toml` 里限制了 `>=3.10,<3.11`）。
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 
 # 没有本地 python3.10 的情况下，用 uv 下载并 pin
 uv python install 3.10
@@ -55,7 +69,7 @@ RVC 上游脚本里大量使用相对路径（例如 `assets/hubert/hubert_base.
 执行：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_init_runtime.py
 ```
 
@@ -77,22 +91,22 @@ WSL2 访问 Windows 文件系统（`/mnt/c/...`）会有明显的 9P I/O 开销�
 推荐把数据集复制到 WSL 的 ext4（例如 VoiceLab 下的 `datasets/`）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_stage_dataset.py \
   --src "/mnt/c/AIGC/数据集/xuan" \
-  --dst "$HOME/AntiGravityProjects/VoiceLab/datasets/xuan"
+  --dst "$VOICELAB_DIR/datasets/xuan"
 ```
 
 复制完成后，确认文件数一致：
 
 ```bash
-find "$HOME/AntiGravityProjects/VoiceLab/datasets/xuan" -maxdepth 1 -type f -iname "*.wav" | wc -l
+find "$VOICELAB_DIR/datasets/xuan" -maxdepth 1 -type f -iname "*.wav" | wc -l
 ```
 
 之后训练时直接指向 WSL 路径：
 
 ```bash
-uv run python tools/rvc_train.py --dataset-dir "$HOME/AntiGravityProjects/VoiceLab/datasets/xuan"
+uv run python tools/rvc_train.py --dataset-dir "$VOICELAB_DIR/datasets/xuan"
 ```
 
 ## 5. 训练 xuan 模型（阶段 A：先跑通全链路 30 epoch）
@@ -103,9 +117,9 @@ uv run python tools/rvc_train.py --dataset-dir "$HOME/AntiGravityProjects/VoiceL
 执行：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train.py \
-  --dataset-dir "$HOME/AntiGravityProjects/VoiceLab/datasets/xuan" \
+  --dataset-dir "$VOICELAB_DIR/datasets/xuan" \
   --exp-name xuan_v2_48k_f0 \
   --total-epoch 30 \
   --batch-size 4 \
@@ -126,7 +140,7 @@ RVC 上游训练脚本会在 `runtime/logs/xuan_v2_48k_f0/` 内自动发现 `G_*
 第二阶段通常不需要重新预处理/提取特征/写 filelist；因此建议跳过这些步骤直接续跑训练。
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train.py \
   --exp-name xuan_v2_48k_f0 \
   --total-epoch 200 \
@@ -141,7 +155,7 @@ uv run python tools/rvc_train.py \
 该索引用于推理时的检索增强（`index_rate` 拉高通常能显著降低“电音感/撕裂”）。
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train_index.py --exp-name xuan_v2_48k_f0
 ```
 
@@ -162,15 +176,15 @@ uv run python tools/rvc_train_index.py --exp-name xuan_v2_48k_f0
 ### 8.1 普通人声（Speech）示例：Preset-Speech
 
 示例输入（仓库里已有的短 wav；用来做 sanity check 很合适）：
-- `$HOME/AntiGravityProjects/VoiceLab/datasets/XingTong/XingTong_445.wav`
+- `$VOICELAB_DIR/datasets/XingTong/XingTong_445.wav`
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xuan_v2_48k_f0 \
   --model latest \
-  --input "$HOME/AntiGravityProjects/VoiceLab/datasets/XingTong/XingTong_445.wav" \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/speech_to_xuan_pitch0_preset_speech.wav" \
+  --input "$VOICELAB_DIR/datasets/XingTong/XingTong_445.wav" \
+  --output "$VOICELAB_DIR/workflows/rvc/out_wav/speech_to_xuan_pitch0_preset_speech.wav" \
   --pitch 0 \
   --f0-method rmvpe \
   --index-rate 0.8
@@ -182,12 +196,12 @@ uv run python tools/rvc_infer_one.py \
 - `/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav`
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xuan_v2_48k_f0 \
   --model latest \
   --input "/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav" \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0_preset_moreclean.wav" \
+  --output "$VOICELAB_DIR/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0_preset_moreclean.wav" \
   --pitch 0 \
   --f0-method crepe \
   --index-rate 0.65 \
@@ -212,7 +226,7 @@ uv run python tools/rvc_infer_one.py \
 1) 训练时（每 10 epoch 保存一次 checkpoint，并同步导出 weights）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_train.py \
   --exp-name xuan_v2_48k_f0 \
   --total-epoch 200 \
@@ -226,7 +240,7 @@ uv run python tools/rvc_train.py \
 2) 推理时自动选择最新权重：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xuan_v2_48k_f0 \
   --model latest \
@@ -237,7 +251,7 @@ uv run python tools/rvc_infer_one.py \
 如果你想在训练停止后“手动”导出（不依赖自动导出），也可以执行：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_export_latest_weights.py --exp-name xuan_v2_48k_f0
 ```
 
@@ -310,7 +324,7 @@ uv run python tools/rvc_export_latest_weights.py --exp-name xuan_v2_48k_f0
 全参数命令模板（仅供参考；把你不需要的参数删掉即可）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_infer_one.py \
   --exp-name xuan_v2_48k_f0 \
   --model latest \
@@ -340,7 +354,7 @@ IN_DIR="$HOME/in_wav"
 OUT_DIR="$HOME/out_wav_xuan"
 mkdir -p "$OUT_DIR"
 
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 for f in "$IN_DIR"/*.wav; do
   bn="$(basename "$f" .wav)"
   uv run python tools/rvc_infer_one.py \
@@ -367,7 +381,7 @@ RVC 上游训练脚本会在实验目录下写 TensorBoard event 文件：
 ### 12.1 启动（推荐：只看一个实验）
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run tensorboard --logdir=runtime/logs/xuan_v2_48k_f0 --host 0.0.0.0 --port 6006
 ```
 
@@ -385,7 +399,7 @@ uv run tensorboard --logdir=runtime/logs/xuan_v2_48k_f0 --host 0.0.0.0 --port 60
 把 `--logdir` 指向 `runtime/logs`，TensorBoard 会按子目录分 run 展示（适合对比多个实验名）：
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+cd "$VOICELAB_DIR/workflows/rvc"
 uv run tensorboard --logdir=runtime/logs --host 0.0.0.0 --port 6006
 ```
 

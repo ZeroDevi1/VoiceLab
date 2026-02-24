@@ -11,7 +11,11 @@ VoiceLab 是一个语音相关工作区：把上游项目（CosyVoice / RVC / MS
 - 初始化各 workflow runtime
 
 ```bash
-cd ~/AntiGravityProjects/VoiceLab
+git clone git@github.com:ZeroDevi1/VoiceLab.git
+cd VoiceLab
+export VOICELAB_DIR="$PWD"
+
+cd "$VOICELAB_DIR"
 uv run -m voicelab bootstrap
 ```
 
@@ -32,4 +36,3 @@ uv run -m voicelab bootstrap
 ## Wiki
 
 本仓库支持把 `docs/` 自动同步到 GitHub Wiki。说明见：`docs/WIKI_SYNC.md`
-
