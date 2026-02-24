@@ -101,7 +101,7 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="Overwrite existing index outputs.")
     args = ap.parse_args()
 
-    rt = init_runtime(force=False, assets_src=None)
+    rt = init_runtime(force=False, assets_src=None, download_missing=False, hf_base="https://hf-mirror.com")
     exp = rt / "logs" / args.exp_name
     feature_dir = exp / ("3_feature256" if args.version == "v1" else "3_feature768")
     if not feature_dir.exists():

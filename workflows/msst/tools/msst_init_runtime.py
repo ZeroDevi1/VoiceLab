@@ -56,6 +56,24 @@ def _copy_model(src: Path, dst: Path, *, force: bool) -> None:
     shutil.copy2(src, dst)
 
 
+def _link_or_copy_model(src: Path, dst: Path, *, force: bool) -> None:
+    """
+    Prefer symlink to avoid duplicating large model files; fall back to copy.
+    """
+    if force and (dst.exists() or dst.is_symlink()):
+        if dst.is_symlink() or dst.is_file():
+            dst.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(dst)
+    if dst.exists() or dst.is_symlink():
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(str(src), str(dst))
+    except OSError:
+        shutil.copy2(src, dst)
+
+
 def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool, hf_base: str) -> Path:
     vendor = msst_vendor_root()
     if not vendor.exists():
@@ -96,6 +114,17 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     _ensure_dir(rt / "pretrain" / "vocal_models")
     _ensure_dir(rt / "pretrain" / "single_stem_models")
 
+    # If runtime already has all required model files, do not require an assets_src.
+    required = [
+        rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
+        rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
+        rt / "pretrain" / "vocal_models" / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+        rt / "pretrain" / "single_stem_models" / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+        rt / "pretrain" / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+    ]
+    if not force and all(p.exists() for p in required):
+        return rt
+
     # 6) Copy models from the user's existing MSST install (WSL-visible Windows path by default).
     src_assets = assets_src or assets_src_root()
     if not src_assets.exists():
@@ -104,7 +133,7 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
             "Set MSST_ASSETS_SRC_DIR or pass --assets-src."
         )
 
-    copies = [
+    models = [
         (src_assets / "vocal_models" / "inst_v1e.ckpt", rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt"),
         (src_assets / "vocal_models" / "big_beta5e.ckpt", rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt"),
         (
@@ -127,27 +156,25 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
         ),
     ]
 
-    for src, dst in copies:
+    for src, dst in models:
         if src.exists():
-            _copy_model(src, dst, force=force)
+            _link_or_copy_model(src, dst, force=force)
 
-    # 7) Download missing models if requested (new environment).
-    missing = [dst for src, dst in copies if not dst.exists()]
+    # 7) Download missing models into assets_src if requested (new environment).
+    missing = [src for src, dst in models if not dst.exists()]
     if missing and download_missing:
         from msst_download_models import build_model_specs, download_models
 
-        print(f"[msst] Missing {len(missing)} model(s); downloading via HuggingFace...", flush=True)
+        print(f"[msst] Missing {len(missing)} model(s); downloading into {src_assets} ...", flush=True)
         specs = build_model_specs(hf_base=hf_base)
-        download_models(specs=specs, force=False)
+        download_models(specs=specs, force=False, dest_root=src_assets, dest_layout="pretrain")
+
+        # Re-link after download.
+        for src, dst in models:
+            if src.exists() and not dst.exists():
+                _link_or_copy_model(src, dst, force=force)
 
     # 8) Verify all required model files exist.
-    required = [
-        rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
-        rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
-        rt / "pretrain" / "vocal_models" / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
-        rt / "pretrain" / "single_stem_models" / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
-        rt / "pretrain" / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-    ]
     missing_required = [p for p in required if not p.exists()]
     if missing_required:
         raise SystemExit(

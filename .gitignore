@@ -20,6 +20,9 @@ workflows/**/out_wav/
 **/.mypy_cache/
 **/.ruff_cache/
 
+## Wiki export
+.wiki-export/
+
 ## OS / editor
 .DS_Store
 Thumbs.db

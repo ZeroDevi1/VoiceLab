@@ -41,5 +41,5 @@ uv run python tools/msst_process_chain.py --input /path/to/song.wav
 ```
 
 完整流程见：
-- 星瞳（训练 + 推理）：`docs/rvc_xingtong_wsl_ubuntu2404.md`
-- xuan（训练 + 推理）：`docs/rvc_xuan_wsl_ubuntu2404.md`
+- 星瞳（训练 + 推理）：`docs/workflows/rvc/rvc_xingtong_wsl_ubuntu2404.md`
+- xuan（训练 + 推理）：`docs/workflows/rvc/rvc_xuan_wsl_ubuntu2404.md`

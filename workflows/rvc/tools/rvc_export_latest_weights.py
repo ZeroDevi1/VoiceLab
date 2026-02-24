@@ -43,7 +43,7 @@ def main() -> int:
     ap.add_argument("--if-f0", type=int, default=1, choices=[0, 1])
     args = ap.parse_args()
 
-    rt = init_runtime(force=False, assets_src=None)
+    rt = init_runtime(force=False, assets_src=None, download_missing=False, hf_base="https://hf-mirror.com")
     ensure_runtime_pythonpath()
     os.chdir(rt)
 
@@ -90,4 +90,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

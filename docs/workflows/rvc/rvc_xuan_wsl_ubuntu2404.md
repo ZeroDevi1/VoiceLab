@@ -156,6 +156,8 @@ uv run python tools/rvc_train_index.py --exp-name xuan_v2_48k_f0
 - 歌声（Singing）：优先用 **Preset-MoreClean**（更干净、撕裂风险更低；必要时再调 `pitch`）
 
 > 建议：如果你的输入音频是 `workflows/msst` 产出的 `*_vocals_karaoke_noreverb_dry.wav`，通常推理效果会更稳定。
+>
+> 设备提示：如需强制用 GPU，可在命令里加 `--device cuda:0`（或其它编号）；强制 CPU 则用 `--device cpu`。
 
 ### 8.1 普通人声（Speech）示例：Preset-Speech
 
@@ -169,16 +171,9 @@ uv run python tools/rvc_infer_one.py \
   --model latest \
   --input "$HOME/AntiGravityProjects/VoiceLab/datasets/XingTong/XingTong_445.wav" \
   --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/speech_to_xuan_pitch0_preset_speech.wav" \
-  --device cuda:0 \
   --pitch 0 \
   --f0-method rmvpe \
-  --index-rate 0.8 \
-  --filter-radius 3 \
-  --resample-sr 0 \
-  --rms-mix-rate 0.25 \
-  --protect 0.33 \
-  --stereo-mode mono \
-  --subtype PCM_16
+  --index-rate 0.8
 ```
 
 ### 8.2 歌声（Singing）示例：Preset-MoreClean（推荐）
@@ -193,24 +188,17 @@ uv run python tools/rvc_infer_one.py \
   --model latest \
   --input "/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav" \
   --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0_preset_moreclean.wav" \
-  --device cuda:0 \
   --pitch 0 \
   --f0-method crepe \
   --index-rate 0.65 \
-  --filter-radius 3 \
-  --resample-sr 0 \
-  --rms-mix-rate 0.25 \
   --protect 0.4 \
-  --stereo-mode pan \
-  --pan-window-ms 50 \
-  --pan-hop-ms 10 \
-  --pan-strength 1.0 \
-  --subtype PCM_16
+  --stereo-mode pan
 ```
 
 > 提示：
 > - `--f0-method crepe` 更稳但更慢；想快可换成 `rmvpe`。
 > - 歌声场景一般先从 `--pitch 0` 开始（不移调），再按听感小步调整（见 §9 的 pitch 建议）。
+> - 上面示例里未出现的参数，会使用 `tools/rvc_infer_one.py` 的默认值；需要时见 §10（全参数说明）。
 
 ### 8.x 训练中途停止时，如何用“最新权重”做推理
 
@@ -258,9 +246,7 @@ uv run python tools/rvc_export_latest_weights.py --exp-name xuan_v2_48k_f0
 ### Preset-Speech（默认）
 - `pitch=0`
 - `index-rate=0.8`
-- `filter-radius=3`
-- `rms-mix-rate=0.25`
-- `protect=0.33`
+- 其余保持默认（例如：`filter-radius=3, rms-mix-rate=0.25, protect=0.33`）
 
 ### Preset-MoreTarget（更像目标音色）
 - `index-rate=0.9`
@@ -269,14 +255,83 @@ uv run python tools/rvc_export_latest_weights.py --exp-name xuan_v2_48k_f0
 ### Preset-MoreClean（更干净、撕裂风险更低）
 - `index-rate=0.65`
 - `protect=0.4`
-- 其余同 Preset-Speech
+- 其余同 Preset-Speech（例如：`filter-radius=3, rms-mix-rate=0.25`）
 
 ### pitch 调整规则（可执行建议）
 - 需要更“女声化”：`+6 ~ +12`
 - 需要更“男声化”：`-3 ~ -6`
 - 每次只改 `2~3` 半音做 A/B 对比，不要一次跳太大
 
-## 10. 批量推理（模板）
+## 10. 推理参数全量说明（可选）
+
+本节是 `tools/rvc_infer_one.py` 的参数速查（给“需要深度调参/排查问题”时用）。一般日常推理只用 §8 的少量参数即可。
+
+### 输入/输出/模型选择
+
+- `--exp-name`：实验名（决定默认权重 `<exp-name>.pth` 与索引 `<exp-name>.index`）
+- `--model`：权重选择
+  - `latest`：自动选择 `runtime/assets/weights/` 下最近修改的、以 `exp-name` 为前缀的权重
+  - 具体文件名：例如 `xuan_v2_48k_f0_e30_s123456.pth`
+  - 绝对路径：例如 `/path/to/xxx.pth`
+- `--input`：输入音频路径
+- `--output`：输出音频路径
+
+### “影响听感”的常用参数（最常改）
+
+- `--pitch`：变调（半音；唱歌一般先从 `0` 开始）
+- `--f0-method`：`rmvpe|fcpe|crepe|harvest|pm`
+  - `rmvpe`：速度/质量平衡（默认）
+  - `crepe`：更稳但更慢（唱歌常用）
+- `--index-rate`：索引检索强度（更像目标音色通常会更高；太高可能带来“电音感/咬字撕裂”）
+- `--protect`：保护清辅音/呼吸，降低撕裂（更干净通常把它调高）
+- `--rms-mix-rate`：响度包络融合（默认 `0.25` 通常足够）
+- `--filter-radius`：平滑（默认 `3`）
+- `--resample-sr`：重采样输出采样率（默认 `0` 表示不额外重采样）
+
+### 立体声处理（当输入是 stereo 时）
+
+- `--stereo-mode`：`mono|pan|dual`
+  - `mono`：下混到单声道（默认，最快）
+  - `pan`：先按 mono 推理，再把输入的声像“作为增益包络”复用到输出（更适合人声）
+  - `dual`：左右声道分别推理（最慢，且更容易出现左右不一致）
+
+`--stereo-mode pan` 的高级参数（一般不用改）：
+- `--pan-window-ms`（默认 `50`）
+- `--pan-hop-ms`（默认 `10`）
+- `--pan-strength`（默认 `1.0`）
+
+### 输出与其它
+
+- `--subtype`：WAV subtype（默认 `PCM_16`；一般不用改）
+- `--no-normalize`：关闭峰值归一化（默认会归一化，避免“太小声/爆音”）
+- `--device`：强制设备（例如 `cuda:0` / `cpu`；不传则使用上游 Config 默认）
+- `--is-half`：是否启用 FP16（默认开启）
+
+全参数命令模板（仅供参考；把你不需要的参数删掉即可）：
+
+```bash
+cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+uv run python tools/rvc_infer_one.py \
+  --exp-name xuan_v2_48k_f0 \
+  --model latest \
+  --input "/path/to/input.wav" \
+  --output "/path/to/output.wav" \
+  --device cuda:0 \
+  --pitch 0 \
+  --f0-method rmvpe \
+  --index-rate 0.8 \
+  --filter-radius 3 \
+  --resample-sr 0 \
+  --rms-mix-rate 0.25 \
+  --protect 0.33 \
+  --stereo-mode pan \
+  --pan-window-ms 50 \
+  --pan-hop-ms 10 \
+  --pan-strength 1.0 \
+  --subtype PCM_16
+```
+
+## 11. 批量推理（模板）
 
 示例：把一个目录下的 wav 批量转换到输出目录（逐文件指定 `--output`，避免相对路径混乱）。
 
@@ -290,17 +345,16 @@ for f in "$IN_DIR"/*.wav; do
   bn="$(basename "$f" .wav)"
   uv run python tools/rvc_infer_one.py \
     --exp-name xuan_v2_48k_f0 \
+    --model latest \
     --input "$f" \
     --output "$OUT_DIR/${bn}_to_xuan.wav" \
     --pitch 0 \
-    --index-rate 0.8 \
-    --filter-radius 3 \
-    --rms-mix-rate 0.25 \
-    --protect 0.33
+    --f0-method rmvpe \
+    --index-rate 0.8
 done
 ```
 
-## 11. TensorBoard（可视化训练曲线）
+## 12. TensorBoard（可视化训练曲线）
 
 RVC 上游训练脚本会在实验目录下写 TensorBoard event 文件：
 - `workflows/rvc/runtime/logs/<exp-name>/events.out.tfevents.*`
@@ -310,7 +364,7 @@ RVC 上游训练脚本会在实验目录下写 TensorBoard event 文件：
 - 对比不同 epoch 的听感（结合 `--save-every-weights 1` 或在固定 epoch 处推理 A/B）
 - 发现异常（loss 爆炸、梯度异常、训练停滞等）
 
-### 11.1 启动（推荐：只看一个实验）
+### 12.1 启动（推荐：只看一个实验）
 
 ```bash
 cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
@@ -326,7 +380,7 @@ uv run tensorboard --logdir=runtime/logs/xuan_v2_48k_f0 --host 0.0.0.0 --port 60
      ```
   2) 用：`http://<WSL_IP>:6006`
 
-### 11.2 启动（看多个实验/对比）
+### 12.2 启动（看多个实验/对比）
 
 把 `--logdir` 指向 `runtime/logs`，TensorBoard 会按子目录分 run 展示（适合对比多个实验名）：
 
@@ -335,7 +389,7 @@ cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
 uv run tensorboard --logdir=runtime/logs --host 0.0.0.0 --port 6006
 ```
 
-### 11.3 推荐重点关注的面板/指标
+### 12.3 推荐重点关注的面板/指标
 
 - Scalars
   - `loss/g/total`：生成器总损失（整体趋势看“是否还在学”）

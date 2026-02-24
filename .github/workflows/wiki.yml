@@ -1,0 +1,63 @@
+name: sync-wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+      - "docs/**/*.md"
+      - "scripts/wiki_export.sh"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export wiki markdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/wiki_export.sh .wiki-export
+
+      - name: Sync to GitHub Wiki
+        shell: bash
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git config --global url."https://x-access-token:${WIKI_TOKEN}@github.com/".insteadOf "https://github.com/"
+          rm -rf wiki
+          git clone "https://github.com/${REPO}.wiki.git" wiki
+
+          rsync -a --delete --exclude ".git" .wiki-export/ wiki/
+
+          cd wiki
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "no wiki changes"
+            exit 0
+          fi
+
+          short_sha="${SHA:0:7}"
+          git add -A
+          git commit -m "sync wiki from ${short_sha}"
+          git push origin "HEAD:${branch}"
+

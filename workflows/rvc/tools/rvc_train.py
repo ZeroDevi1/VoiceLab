@@ -186,7 +186,7 @@ def main() -> int:
     args = ap.parse_args()
 
     # Ensure runtime exists and is correctly wired.
-    rt = init_runtime(force=False, assets_src=None)
+    rt = init_runtime(force=False, assets_src=None, download_missing=False, hf_base="https://hf-mirror.com")
     run_env = os.environ.copy()
     if args.quiet_warnings:
         # Keep stderr clean; upstream prints lots of harmless deprecation warnings on newer torch.

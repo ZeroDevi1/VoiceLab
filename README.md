@@ -2,6 +2,8 @@
 
 一个用于 **语音相关项目** 的工作区，目标是把各个上游项目（CosyVoice / GPT-SoVITS / RVC）当作 `vendor/` 依赖管理，而把你自己的 **数据准备、训练配置、训练产物与脚本** 保持在 `workflows/` 中，避免“污染上游仓库”。
 
+文档索引：`docs/index.md`
+
 ## 目录约定
 
 - `vendor/`：放上游仓库（整个目录在本工作区 git 中忽略）
@@ -26,4 +28,20 @@ cd ~/AntiGravityProjects/VoiceLab/workflows/cosyvoice
 uv sync
 ```
 
-完整流程见：`workflows/cosyvoice/docs/cosyvoice_xuan_sft_wsl_ubuntu2404.md`
+完整流程见：`docs/workflows/cosyvoice/cosyvoice_xuan_sft_wsl_ubuntu2404.md`
+
+新环境推荐一键初始化（vendor + uv sync + 模型下载 + runtime init）：
+
+```bash
+cd ~/AntiGravityProjects/VoiceLab
+uv run -m voicelab bootstrap
+```
+
+### 全局共享缓存说明（训练/推理代码无需修改）
+
+`bootstrap` 默认会把大模型/资产下载到全局共享缓存：
+- `~/.cache/voicelab/assets`
+
+并通过各 workflow 的 `*_init_runtime.py` 把这些文件 **软链到 `workflows/*/runtime/`**（RVC/MSST），或在 workflow 内创建固定相对路径的软链（CosyVoice 的 `workflows/cosyvoice/pretrained_models`）。
+
+因此你后续照常执行训练/推理脚本即可：训练/推理代码仍然只读 `runtime/`（或 workflow 内相对路径），**不需要改代码、不需要额外传 `--assets-src`**。

@@ -177,7 +177,7 @@ def main() -> int:
     args = ap.parse_args()
     normalize = not bool(args.no_normalize)
 
-    rt = init_runtime(force=False, assets_src=None)
+    rt = init_runtime(force=False, assets_src=None, download_missing=False, hf_base="https://hf-mirror.com")
     ensure_runtime_pythonpath()
     # Upstream RVC uses lots of relative paths like `configs/...`, `assets/...`, `logs/...`.
     # Ensure we run from the runtime root so `Config()` and VC pipeline can find files.

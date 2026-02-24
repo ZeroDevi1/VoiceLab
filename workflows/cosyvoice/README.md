@@ -4,7 +4,7 @@
 
 上游 CosyVoice 仓库放在 `../../vendor/CosyVoice`（整个 `vendor/` 目录被 git 忽略，需要时自行 clone/pull）。
 
-使用说明见：`docs/cosyvoice_xuan_sft_wsl_ubuntu2404.md`
+使用说明见：`docs/workflows/cosyvoice/cosyvoice_xuan_sft_wsl_ubuntu2404.md`
 
 初始化环境（WSL 推荐 Python 3.10）：
 

@@ -141,12 +141,29 @@ def _download_one(*, spec: ModelSpec, dest: Path, force: bool) -> None:
             raise ValueError(f"SHA256 mismatch for {spec.name}: expected={spec.sha256}, got={actual_sha}")
 
 
-def download_models(*, specs: Iterable[ModelSpec], force: bool) -> None:
-    rt = runtime_root()
-    rt.mkdir(parents=True, exist_ok=True)
+def _resolve_dest_path(*, dest_root: Path, rel_dest: Path, layout: str) -> Path:
+    """
+    Resolve a spec rel_dest path under dest_root.
+
+    layout:
+      - runtime:  dest_root/<rel_dest> (rel_dest includes leading "pretrain/")
+      - pretrain: dest_root/<rel_dest without leading "pretrain/">
+    """
+    if layout == "runtime":
+        return dest_root / rel_dest
+    if layout == "pretrain":
+        parts = rel_dest.parts
+        if parts and parts[0] == "pretrain":
+            rel_dest = Path(*parts[1:])
+        return dest_root / rel_dest
+    raise ValueError(f"Unknown dest layout: {layout}")
+
+
+def download_models(*, specs: Iterable[ModelSpec], force: bool, dest_root: Path, dest_layout: str) -> None:
+    dest_root.mkdir(parents=True, exist_ok=True)
     for spec in specs:
-        dest = rt / spec.rel_dest
-        print(f"[msst] download: {spec.name} -> {dest.name}", flush=True)
+        dest = _resolve_dest_path(dest_root=dest_root, rel_dest=spec.rel_dest, layout=dest_layout)
+        print(f"[msst] download: {spec.name} -> {dest}", flush=True)
         _download_one(spec=spec, dest=dest, force=force)
 
 
@@ -157,11 +174,30 @@ def main() -> int:
         default="https://hf-mirror.com",
         help="HuggingFace base URL (default: https://hf-mirror.com)",
     )
+    ap.add_argument(
+        "--dest-root",
+        default=str(runtime_root()),
+        help=(
+            "Destination root dir. Default is workflows/msst/runtime. "
+            "Use a shared cache (e.g. ~/.cache/voicelab/assets/msst/pretrain) with --dest-layout pretrain."
+        ),
+    )
+    ap.add_argument(
+        "--dest-layout",
+        default="runtime",
+        choices=["runtime", "pretrain"],
+        help="How to interpret ModelSpec rel_dest under dest-root (default: runtime).",
+    )
     ap.add_argument("--force", action="store_true", help="Re-download even if the file exists.")
     args = ap.parse_args()
 
     specs = build_model_specs(hf_base=str(args.hf_base))
-    download_models(specs=specs, force=bool(args.force))
+    download_models(
+        specs=specs,
+        force=bool(args.force),
+        dest_root=Path(str(args.dest_root)).expanduser().resolve(),
+        dest_layout=str(args.dest_layout),
+    )
     print("[msst] OK: downloads complete")
     return 0
 
