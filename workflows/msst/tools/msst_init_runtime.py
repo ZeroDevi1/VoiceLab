@@ -81,8 +81,11 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     _copytree(configs_backup, rt / "configs", force=force)
 
     # 3) Copy data/model metadata (for download + sha validation).
-    _copyfile(vendor / "data" / "models_info.json", rt / "data" / "models_info.json", force=force)
-    _copyfile(vendor / "data" / "msst_model_map.json", rt / "data" / "msst_model_map.json", force=force)
+    # Upstream may keep these under data_backup/ and generate data/ at runtime.
+    if (vendor / "data_backup" / "models_info.json").exists():
+        _copyfile(vendor / "data_backup" / "models_info.json", rt / "data" / "models_info.json", force=force)
+    else:
+        _copyfile(vendor / "data" / "models_info.json", rt / "data" / "models_info.json", force=force)
 
     # 4) Install becruily karaoke config under runtime/configs/vocal_models/.
     # Keep it in runtime so inference always uses a stable config even if vendor changes.
@@ -105,6 +108,13 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
         (src_assets / "vocal_models" / "inst_v1e.ckpt", rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt"),
         (src_assets / "vocal_models" / "big_beta5e.ckpt", rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt"),
         (
+            src_assets / "vocal_models" / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+            rt
+            / "pretrain"
+            / "vocal_models"
+            / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+        ),
+        (
             src_assets / "single_stem_models" / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
             rt
             / "pretrain"
@@ -114,11 +124,6 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
         (
             src_assets / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
             rt / "pretrain" / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-        ),
-        (
-            # Optional in the user's existing install.
-            src_assets / "vocal_models" / "mel_band_roformer_karaoke_becruily.ckpt",
-            rt / "pretrain" / "vocal_models" / "mel_band_roformer_karaoke_becruily.ckpt",
         ),
     ]
 
@@ -131,7 +136,7 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     if missing and download_missing:
         from msst_download_models import build_model_specs, download_models
 
-        print(f"[msst] Missing {len(missing)} model(s); downloading via HuggingFace...")
+        print(f"[msst] Missing {len(missing)} model(s); downloading via HuggingFace...", flush=True)
         specs = build_model_specs(hf_base=hf_base)
         download_models(specs=specs, force=False)
 
@@ -139,7 +144,7 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     required = [
         rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
         rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
-        rt / "pretrain" / "vocal_models" / "mel_band_roformer_karaoke_becruily.ckpt",
+        rt / "pretrain" / "vocal_models" / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
         rt / "pretrain" / "single_stem_models" / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
         rt / "pretrain" / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
     ]
@@ -164,7 +169,11 @@ def main() -> int:
         help="Path to an existing MSST pretrain directory (default: /mnt/c/AIGC/MSST-WebUI/pretrain).",
     )
     ap.add_argument("--no-download-missing", action="store_true", help="Disable downloading missing models.")
-    ap.add_argument("--hf-base", default="https://huggingface.co", help="HuggingFace base URL (e.g. https://hf-mirror.com)")
+    ap.add_argument(
+        "--hf-base",
+        default="https://hf-mirror.com",
+        help="HuggingFace base URL (default: https://hf-mirror.com)",
+    )
     args = ap.parse_args()
 
     rt = init_runtime(
@@ -182,4 +191,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

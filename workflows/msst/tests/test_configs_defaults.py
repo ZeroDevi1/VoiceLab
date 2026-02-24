@@ -37,10 +37,11 @@ def _pick_config(path: str) -> Path:
 @pytest.mark.parametrize(
     "rel,chunk_size,num_overlap,sr",
     [
-        ("vocal_models/config_melbandroformer_inst.yaml", 485100, 4, 44100),
-        ("vocal_models/big_beta5e.yaml", 485100, 2, 44100),
-        ("single_stem_models/dereverb_mel_band_roformer_anvuew.yaml", 352800, 4, 44100),
-        ("single_stem_models/model_mel_band_roformer_denoise.yaml", 352800, 4, 44100),
+        ("vocal_models/inst_v1e.ckpt.yaml", 485100, 4, 44100),
+        ("vocal_models/big_beta5e.ckpt.yaml", 485100, 2, 44100),
+        ("vocal_models/model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt.yaml", 352800, 4, 44100),
+        ("single_stem_models/dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt.yaml", 352800, 4, 44100),
+        ("single_stem_models/denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt.yaml", 352800, 4, 44100),
     ],
 )
 def test_official_configs_defaults(rel: str, chunk_size: int, num_overlap: int, sr: int) -> None:
@@ -57,4 +58,3 @@ def test_becruily_karaoke_config_defaults() -> None:
     assert int(cfg["audio"]["chunk_size"]) == 485100
     assert int(cfg["inference"]["num_overlap"]) == 8
     assert int(cfg["audio"]["sample_rate"]) == 44100
-

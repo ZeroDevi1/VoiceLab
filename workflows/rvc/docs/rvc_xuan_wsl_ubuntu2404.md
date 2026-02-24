@@ -229,6 +229,7 @@ uv run python tools/rvc_infer_one.py \
   --input "/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav" \
   --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0.wav" \
   --pitch 0 \
+  --f0-method crepe \
   --index-rate 0.65 \
   --filter-radius 3 \
   --rms-mix-rate 0.25 \

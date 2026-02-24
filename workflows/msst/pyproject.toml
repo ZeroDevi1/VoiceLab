@@ -8,6 +8,8 @@ dependencies = [
   "torch==2.4.0",
   "numpy==1.26.4",
   "scipy==1.13.1",
+  "safetensors>=0.4.2",
+  "colorama>=0.4.6",
 
   # Audio IO + DSP
   "librosa==0.10.2",
@@ -25,6 +27,7 @@ dependencies = [
   "einops>=0.8.0",
   "rotary-embedding-torch>=0.6.4",
   "beartype>=0.18.5",
+  "neuraloperator>=0.3.0",
 
   # Downloads
   "requests>=2.32.3",
@@ -35,4 +38,3 @@ dependencies = [
 
 [tool.uv]
 package = false
-

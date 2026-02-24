@@ -47,5 +47,4 @@ uv run python tools/msst_process_chain.py --input /path/to/song.wav
 
 - 需要系统已安装 `ffmpeg`（用于输入预转换）。
 - 如果新环境没有 `/mnt/c/AIGC/MSST-WebUI/pretrain`，可用：
-  - `uv run python tools/msst_download_models.py --hf-base https://hf-mirror.com`
-
+  - `uv run python tools/msst_download_models.py`（默认走 `https://hf-mirror.com`）

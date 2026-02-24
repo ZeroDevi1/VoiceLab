@@ -84,21 +84,34 @@ def _runtime_paths() -> dict[str, Path]:
     return {
         "rt": rt,
         "inst_model": rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
-        "inst_cfg": rt / "configs" / "vocal_models" / "config_melbandroformer_inst.yaml",
+        "inst_cfg": rt / "configs" / "vocal_models" / "inst_v1e.ckpt.yaml",
         "vocal_model": rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
-        "vocal_cfg": rt / "configs" / "vocal_models" / "big_beta5e.yaml",
-        "karaoke_model": rt / "pretrain" / "vocal_models" / "mel_band_roformer_karaoke_becruily.ckpt",
-        "karaoke_cfg": rt / "configs" / "vocal_models" / "config_karaoke_becruily.yaml",
+        "vocal_cfg": rt / "configs" / "vocal_models" / "big_beta5e.ckpt.yaml",
+        # Step2: official karaoke model shipped by MSST-WebUI (stable config + compatible code).
+        "karaoke_model": rt
+        / "pretrain"
+        / "vocal_models"
+        / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+        "karaoke_cfg": rt
+        / "configs"
+        / "vocal_models"
+        / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt.yaml",
         "dereverb_model": rt
         / "pretrain"
         / "single_stem_models"
         / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
-        "dereverb_cfg": rt / "configs" / "single_stem_models" / "dereverb_mel_band_roformer_anvuew.yaml",
+        "dereverb_cfg": rt
+        / "configs"
+        / "single_stem_models"
+        / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt.yaml",
         "denoise_model": rt
         / "pretrain"
         / "single_stem_models"
         / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-        "denoise_cfg": rt / "configs" / "single_stem_models" / "model_mel_band_roformer_denoise.yaml",
+        "denoise_cfg": rt
+        / "configs"
+        / "single_stem_models"
+        / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt.yaml",
     }
 
 
@@ -279,15 +292,24 @@ def process_one(
             use_tta=False,
         )
 
-        # becruily config uses instruments: Vocals / Instrumental; rename to karaoke/other.
-        src_vocals = output_dir / f"{outs.vocals.stem}_Vocals{ext}"
-        src_instr = output_dir / f"{outs.vocals.stem}_Instrumental{ext}"
-        _assert_nonempty(src_vocals, hint="Step2(karaoke) missing Vocals output. Check becruily config/model match.")
-        _assert_nonempty(src_instr, hint="Step2(karaoke) missing Instrumental output. Check becruily config/model match.")
-        os.replace(src_vocals, outs.vocals_karaoke)
-        os.replace(src_instr, outs.vocals_other)
-        _assert_nonempty(outs.vocals_karaoke, hint="Step2(karaoke) rename failed.")
-        _assert_nonempty(outs.vocals_other, hint="Step2(other) rename failed.")
+        # Default karaoke model outputs *_karaoke + *_other directly.
+        # Keep a compatibility path for models that output Vocals/Instrumental.
+        if outs.vocals_karaoke.exists() and outs.vocals_other.exists():
+            _assert_nonempty(outs.vocals_karaoke, hint="Step2(karaoke) produced empty output.")
+            _assert_nonempty(outs.vocals_other, hint="Step2(other) produced empty output.")
+        else:
+            src_vocals = output_dir / f"{outs.vocals.stem}_Vocals{ext}"
+            src_instr = output_dir / f"{outs.vocals.stem}_Instrumental{ext}"
+            _assert_nonempty(
+                src_vocals, hint="Step2(karaoke) missing output. Expected *_karaoke or *_Vocals depending on model."
+            )
+            _assert_nonempty(
+                src_instr, hint="Step2(other) missing output. Expected *_other or *_Instrumental depending on model."
+            )
+            os.replace(src_vocals, outs.vocals_karaoke)
+            os.replace(src_instr, outs.vocals_other)
+            _assert_nonempty(outs.vocals_karaoke, hint="Step2(karaoke) rename failed.")
+            _assert_nonempty(outs.vocals_other, hint="Step2(other) rename failed.")
 
         # Step3: De-reverb on karaoke -> *_noreverb.wav
         step3_dir = td_path / "step3"

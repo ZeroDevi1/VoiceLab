@@ -128,6 +128,12 @@ def main() -> int:
     ap.add_argument("--output", default=None)
 
     ap.add_argument("--pitch", type=int, default=12, help="Pitch shift in semitones (+12 is one octave up).")
+    ap.add_argument(
+        "--f0-method",
+        default="rmvpe",
+        choices=["pm", "harvest", "crepe", "rmvpe", "fcpe"],
+        help="F0 extraction method. 'crepe' is best for stability but slow; 'rmvpe' is best for speed/quality balance.",
+    )
     ap.add_argument("--index-rate", type=float, default=0.8)
     ap.add_argument("--filter-radius", type=int, default=3)
     ap.add_argument("--resample-sr", type=int, default=0)
@@ -257,7 +263,7 @@ def main() -> int:
             str(in_file),
             int(args.pitch),
             None,  # f0 file
-            "rmvpe",  # locked
+            args.f0_method,  # locked
             str(index_path),
             None,
             float(args.index_rate),
