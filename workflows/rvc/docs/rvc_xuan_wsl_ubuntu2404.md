@@ -149,9 +149,18 @@ uv run python tools/rvc_train_index.py --exp-name xuan_v2_48k_f0
 - `workflows/rvc/runtime/indices/added_IVF*_Flat_nprobe_1_xuan_v2_48k_f0_v2.index`
 - 软链短名：`workflows/rvc/runtime/indices/xuan_v2_48k_f0.index`
 
-## 8. 单文件推理（sanity check）
+## 8. 推理（普通人声 + 歌声：根据输入选择不同预设）
 
-先用一段已存在的输入音频做 sanity check（示例用仓库里已有的 XingTong wav）：
+本节只保留两条“完整命令示例”：
+- 普通人声（Speech）：优先用 **Preset-Speech**（更像目标音色可切 **Preset-MoreTarget**）
+- 歌声（Singing）：优先用 **Preset-MoreClean**（更干净、撕裂风险更低；必要时再调 `pitch`）
+
+> 建议：如果你的输入音频是 `workflows/msst` 产出的 `*_vocals_karaoke_noreverb_dry.wav`，通常推理效果会更稳定。
+
+### 8.1 普通人声（Speech）示例：Preset-Speech
+
+示例输入（仓库里已有的短 wav；用来做 sanity check 很合适）：
+- `$HOME/AntiGravityProjects/VoiceLab/datasets/XingTong/XingTong_445.wav`
 
 ```bash
 cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
@@ -159,13 +168,49 @@ uv run python tools/rvc_infer_one.py \
   --exp-name xuan_v2_48k_f0 \
   --model latest \
   --input "$HOME/AntiGravityProjects/VoiceLab/datasets/XingTong/XingTong_445.wav" \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/xingtong_to_xuan_pitch0.wav" \
+  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/speech_to_xuan_pitch0_preset_speech.wav" \
+  --device cuda:0 \
   --pitch 0 \
+  --f0-method rmvpe \
   --index-rate 0.8 \
   --filter-radius 3 \
+  --resample-sr 0 \
   --rms-mix-rate 0.25 \
-  --protect 0.33
+  --protect 0.33 \
+  --stereo-mode mono \
+  --subtype PCM_16
 ```
+
+### 8.2 歌声（Singing）示例：Preset-MoreClean（推荐）
+
+示例输入（由 `workflows/msst` 产出的人声干声；通常是 stereo）：
+- `/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav`
+
+```bash
+cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
+uv run python tools/rvc_infer_one.py \
+  --exp-name xuan_v2_48k_f0 \
+  --model latest \
+  --input "/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav" \
+  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0_preset_moreclean.wav" \
+  --device cuda:0 \
+  --pitch 0 \
+  --f0-method crepe \
+  --index-rate 0.65 \
+  --filter-radius 3 \
+  --resample-sr 0 \
+  --rms-mix-rate 0.25 \
+  --protect 0.4 \
+  --stereo-mode pan \
+  --pan-window-ms 50 \
+  --pan-hop-ms 10 \
+  --pan-strength 1.0 \
+  --subtype PCM_16
+```
+
+> 提示：
+> - `--f0-method crepe` 更稳但更慢；想快可换成 `rmvpe`。
+> - 歌声场景一般先从 `--pitch 0` 开始（不移调），再按听感小步调整（见 §9 的 pitch 建议）。
 
 ### 8.x 训练中途停止时，如何用“最新权重”做推理
 
@@ -206,54 +251,6 @@ uv run python tools/rvc_infer_one.py \
 ```bash
 cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
 uv run python tools/rvc_export_latest_weights.py --exp-name xuan_v2_48k_f0
-```
-
-## 8.1 使用一首音乐人声做测试（台风 - 蒋蒋 vocals）
-
-测试音频（男声人声干声，约 164.55s）：
-- `/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav`
-
-### 方案 A：直接用 `rvc_infer_one.py`（最通用）
-
-> 注意：`--pitch` 会改变整首歌的音高（移调）。唱歌场景一般建议先从 `0` 开始，先保证“不移调”，再根据音色/撕裂情况做微调。
-
-> 立体声说明：这首 vocals 是 **stereo**。建议加 `--stereo-mode pan`，用“时间变化的增益”复用声像，
-> 可以尽量保留左右声道的 panning，同时避免因相位/反相导致的“空心/低频被抵消”问题。
-> `--stereo-mode dual`（左右各跑一次）更慢，也更容易出现左右细节不一致导致的宽度/相位怪感。
-
-```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
-uv run python tools/rvc_infer_one.py \
-  --exp-name xuan_v2_48k_f0 \
-  --model latest \
-  --input "/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav" \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0.wav" \
-  --pitch 0 \
-  --f0-method crepe \
-  --index-rate 0.65 \
-  --filter-radius 3 \
-  --rms-mix-rate 0.25 \
-  --protect 0.4 \
-  --stereo-mode pan
-```
-
-### 方案 B：使用本 workflow 的“固定测试歌”脚本（推荐省事）
-
-该脚本内置了输入路径与一套更偏“干净/少撕裂”的 preset，并默认 `pitch=0`（不移调）：
-- `tools/rvc_infer_taifeng_to_xuan.py`
-
-```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
-uv run python tools/rvc_infer_taifeng_to_xuan.py --model latest
-```
-
-如果你想用同一套 preset，但指定别的输出/或试不同 pitch：
-
-```bash
-cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
-uv run python tools/rvc_infer_taifeng_to_xuan.py \
-  --pitch 0 \
-  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/taifeng_jj_to_xuan_pitch0_try2.wav"
 ```
 
 ## 9. 推理参数预设（三档）

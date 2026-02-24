@@ -170,51 +170,94 @@ uv run python tools/rvc_train_index.py --exp-name xingtong_v2_48k_f0
 - `workflows/rvc/runtime/indices/added_IVF*_Flat_nprobe_1_xingtong_v2_48k_f0_v2.index`
 - 软链短名：`workflows/rvc/runtime/indices/xingtong_v2_48k_f0.index`
 
-## 6. 单文件推理：炫神 -> 星瞳
+## 6. 推理（普通人声 + 歌声：根据输入选择不同预设）
+
+推理建议：
+- 普通人声（Speech）：优先用 **Preset-Speech**（更像目标音色可切 **Preset-MoreTarget**）
+- 歌声（Singing）：优先用 **Preset-MoreClean**（更干净、撕裂风险更低；必要时再调 `pitch`）
+
+> 建议：如果你的输入音频是 `workflows/msst` 产出的 `*_vocals_karaoke_noreverb_dry.wav`，通常推理效果会更稳定。
+
+### 6.1 推理参数预设（三档）
+
+Preset-Speech（默认）
+- `index-rate=0.8`
+- `filter-radius=3`
+- `rms-mix-rate=0.25`
+- `protect=0.33`
+
+Preset-MoreTarget（更像目标音色）
+- `index-rate=0.9`
+- 其余同 Preset-Speech
+
+Preset-MoreClean（更干净、撕裂风险更低）
+- `index-rate=0.65`
+- `protect=0.4`
+- 其余同 Preset-Speech
+
+pitch 调整规则（可执行建议）
+- 男 -> 女：优先从 `+10 ~ +15` 试（常用 `+12`）
+- 女 -> 男：优先从 `-3 ~ -6` 试
+- 每次只改 `2~3` 半音做 A/B 对比，不要一次跳太大
+
+### 6.2 普通人声（Speech）示例：炫神 -> 星瞳（Preset-Speech）
 
 待转换音频：
 - `/mnt/c/AIGC/炫神/马头有大！马头来了！.mp3`
-
-执行（默认 RMVPE，默认 pitch=+12，默认 index_rate=0.8）：
 
 ```bash
 cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
 uv run python tools/rvc_infer_one.py \
   --exp-name xingtong_v2_48k_f0 \
+  --model latest \
+  --input "/mnt/c/AIGC/炫神/马头有大！马头来了！.mp3" \
+  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/马头有大_to_xingtong_pitch12_preset_speech.wav" \
+  --device cuda:0 \
   --pitch 12 \
-  --index-rate 0.8
+  --f0-method rmvpe \
+  --index-rate 0.8 \
+  --filter-radius 3 \
+  --resample-sr 0 \
+  --rms-mix-rate 0.25 \
+  --protect 0.33 \
+  --stereo-mode mono \
+  --subtype PCM_16
 ```
 
-输出：
-- `workflows/rvc/out_wav/马头有大_xingtong_pitch12.wav`
+### 6.3 歌声（Singing）示例：栞 -> 星瞳（Preset-MoreClean）
 
-> 提示：推理脚本默认会对输出做峰值归一化（避免“几乎没声音”或“爆音电流声”）。如需关闭可加 `--no-normalize`。
-
-如果你在训练中开启了 `--save-every-weights 1`，会在 `runtime/assets/weights/` 下生成按 epoch/step 命名的权重文件，
-可用 `--model` 指定某个权重来做盲测对比：
+示例输入（通常由 `workflows/msst` 产出）：
+- `/mnt/c/AIGC/音乐/栞/栞 - MyGO!!!!!_vocals_karaoke_noreverb_dry.wav`
 
 ```bash
+cd ~/AntiGravityProjects/VoiceLab/workflows/rvc
 uv run python tools/rvc_infer_one.py \
   --exp-name xingtong_v2_48k_f0 \
-  --model xingtong_v2_48k_f0_e30_s123456.pth \
-  --pitch 12 \
-  --index-rate 0.8
+  --model latest \
+  --input "/mnt/c/AIGC/音乐/栞/栞 - MyGO!!!!!_vocals_karaoke_noreverb_dry.wav" \
+  --output "$HOME/AntiGravityProjects/VoiceLab/workflows/rvc/out_wav/shiori_mygo_to_xingtong_pitch0_preset_moreclean.wav" \
+  --device cuda:0 \
+  --pitch 0 \
+  --f0-method crepe \
+  --index-rate 0.65 \
+  --filter-radius 3 \
+  --resample-sr 0 \
+  --rms-mix-rate 0.25 \
+  --protect 0.4 \
+  --stereo-mode pan \
+  --pan-window-ms 50 \
+  --pan-hop-ms 10 \
+  --pan-strength 1.0 \
+  --subtype PCM_16
 ```
 
-## 7. 参数调优建议（只讲关键）
-- `--pitch`（变调，半音）
-  - 男 -> 女：优先在 `+10 ~ +15` 范围内试
-  - 起点：`+12`
-  - “花栗鼠”感强：降到 `+9 ~ +11`
-  - “还是像男人捏嗓子”：升到 `+13 ~ +14`
-- `--index-rate`
-  - 星瞳数据足够纯净时：`0.7 ~ 0.9`
-  - 想更像星瞳：提高
-  - 想更保留源音细节/减少“过拟合口感”：降低
-- `--protect`（保护清辅音/呼吸，防撕裂）
-  - 默认 `0.33`；电音撕裂明显可略降（更强保护），但可能削弱索引效果
+> 提示：
+> - `--f0-method crepe` 更稳但更慢；想快可换成 `rmvpe`。
+> - 歌声场景一般先从 `--pitch 0` 开始（不移调）；如果你明确需要“更女声化”，再小步加 `pitch`（例如 `+6/+9/+12`）。
 
-## 8. 常见问题排查
+> 说明：推理脚本默认会对输出做峰值归一化（避免“几乎没声音”或“爆音电流声”）。如需关闭可加 `--no-normalize`。
+
+## 7. 常见问题排查
 - 找不到 `hubert_base.pt` / `rmvpe.pt`
   - 先确认 `tools/rvc_init_runtime.py` 运行成功
   - 或用 `--assets-src` 指向你真实的 RVC 资产目录
@@ -228,7 +271,7 @@ uv run python tools/rvc_infer_one.py \
   - 原因：较新的 `setuptools` 可能不再包含 `pkg_resources`
   - 解决：本 workflow 已在 `workflows/rvc/pyproject.toml` 固定 `setuptools==69.5.1`；执行 `uv sync` 让其生效即可
 
-## 9. TensorBoard（可视化训练曲线）
+## 8. TensorBoard（可视化训练曲线）
 
 在 `workflows/rvc/` 下运行（使用 uv 环境）：
 
