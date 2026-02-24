@@ -12,3 +12,8 @@
 cd ~/AntiGravityProjects/VoiceLab/workflows/cosyvoice
 uv sync
 ```
+
+## （可选）先用 MSST workflow 做音频净化
+
+如果你希望把输入音频做成更干净的干声（去和声、去混响、降噪），可以先用：
+`workflows/msst` 生成 `*_vocals_karaoke_noreverb_dry.wav` 再进入后续流程。

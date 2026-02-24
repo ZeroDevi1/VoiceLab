@@ -1,0 +1,15 @@
+# uv config for this workflow.
+#
+# Why this exists:
+# - MSST inference uses PyTorch and benefits from using the GPU wheel index.
+#
+# If your network cannot access these indexes, set them via env vars or edit this file.
+
+index-strategy = "unsafe-best-match"
+
+[[index]]
+url = "https://pypi.org/simple"
+
+[[index]]
+url = "https://download.pytorch.org/whl/cu121"
+

@@ -70,6 +70,11 @@ def _vendor_repos() -> list[VendorRepo]:
             url="https://github.com/RVC-Boss/GPT-SoVITS",
             dest=vendor / "GPT-SoVITS",
         ),
+        VendorRepo(
+            name="MSST-WebUI",
+            url="https://github.com/SUC-DriverOld/MSST-WebUI",
+            dest=vendor / "MSST-WebUI",
+        ),
     ]
 
 
@@ -151,6 +156,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("[voicelab] Next steps:")
     print("  - CosyVoice env: cd workflows/cosyvoice && uv sync")
     print("  - CosyVoice doc: workflows/cosyvoice/docs/cosyvoice_xuan_sft_wsl_ubuntu2404.md")
+    print("  - MSST env:      cd workflows/msst && uv sync")
+    print("  - MSST init:     cd workflows/msst && uv run python tools/msst_init_runtime.py")
     return 0
 
 
@@ -180,4 +187,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

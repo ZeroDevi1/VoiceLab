@@ -28,4 +28,18 @@ uv sync
 uv run python tools/rvc_init_runtime.py
 ```
 
-完整流程见：`docs/rvc_xingtong_wsl_ubuntu2404.md`
+## （可选）先用 MSST workflow 做音频净化
+
+如果你需要更流程化的“提取伴奏/干声、去和声、去混响、降噪”，建议先用 `workflows/msst` 生成：
+`*_vocals_karaoke_noreverb_dry.wav`，再把它作为 RVC 的输入。
+
+```bash
+cd ~/AntiGravityProjects/VoiceLab/workflows/msst
+uv sync
+uv run python tools/msst_init_runtime.py
+uv run python tools/msst_process_chain.py --input /path/to/song.wav
+```
+
+完整流程见：
+- 星瞳（训练 + 推理）：`docs/rvc_xingtong_wsl_ubuntu2404.md`
+- xuan（训练 + 推理）：`docs/rvc_xuan_wsl_ubuntu2404.md`

@@ -1,0 +1,15 @@
+# Runtime + artifacts (large)
+runtime/
+out_wav/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.python-version
+.venv/
+
+# Logs / caches
+.pytest_cache/
+.ruff_cache/
+

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import signal
 from pathlib import Path
 from random import shuffle
 
@@ -13,10 +14,18 @@ from rvc_stage_dataset import stage_dataset
 from voicelab_bootstrap import voicelab_root
 
 
-def _run(cmd: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
+def _run(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    ok_returncodes: tuple[int, ...] = (0,),
+) -> None:
     # Keep stdout/stderr attached for long-running training.
     print("[rvc] $", " ".join(cmd))
-    subprocess.run(cmd, cwd=str(cwd), check=True, env=env)
+    cp = subprocess.run(cmd, cwd=str(cwd), env=env)
+    if cp.returncode not in ok_returncodes:
+        raise subprocess.CalledProcessError(cp.returncode, cmd)
 
 
 def _exp_dir(rt: Path, exp_name: str) -> Path:
@@ -154,6 +163,21 @@ def main() -> int:
     ap.add_argument("--skip-filelist", action="store_true")
     ap.add_argument("--skip-train", action="store_true")
     ap.add_argument(
+        "--export-latest-on-interrupt",
+        action="store_true",
+        default=True,
+        help=(
+            "When you Ctrl+C during training, export an inference-ready weight from the latest saved checkpoint "
+            "into runtime/assets/weights/<exp-name>.pth (so `--model latest` works as expected)."
+        ),
+    )
+    ap.add_argument(
+        "--no-export-latest-on-interrupt",
+        action="store_false",
+        dest="export_latest_on_interrupt",
+        help="Disable auto-export on Ctrl+C.",
+    )
+    ap.add_argument(
         "--quiet-warnings",
         action="store_true",
         help="Suppress noisy FutureWarning/UserWarning from upstream scripts (does not affect training).",
@@ -259,40 +283,87 @@ def main() -> int:
     if not args.skip_train:
         pre_g = rt / "assets" / ("pretrained_v2" if args.version == "v2" else "pretrained") / f"f0G{args.sr_tag}.pth"
         pre_d = rt / "assets" / ("pretrained_v2" if args.version == "v2" else "pretrained") / f"f0D{args.sr_tag}.pth"
-        _run(
-            [
-                sys.executable,
-                "infer/modules/train/train.py",
-                "-e",
-                args.exp_name,
-                "-sr",
-                args.sr_tag,
-                "-f0",
-                "1" if args.if_f0 else "0",
-                "-bs",
-                str(int(args.batch_size)),
-                "-g",
-                str(args.gpu),
-                "-te",
-                str(int(args.total_epoch)),
-                "-se",
-                str(int(args.save_every_epoch)),
-                "-pg",
-                str(pre_g) if pre_g.exists() else "",
-                "-pd",
-                str(pre_d) if pre_d.exists() else "",
-                "-l",
-                str(int(args.if_latest)),
-                "-c",
-                str(int(args.if_cache_gpu)),
-                "-sw",
-                str(int(args.save_every_weights)),
-                "-v",
-                args.version,
-            ],
-            cwd=rt,
-            env=run_env,
-        )
+        train_cmd = [
+            sys.executable,
+            "infer/modules/train/train.py",
+            "-e",
+            args.exp_name,
+            "-sr",
+            args.sr_tag,
+            "-f0",
+            "1" if args.if_f0 else "0",
+            "-bs",
+            str(int(args.batch_size)),
+            "-g",
+            str(args.gpu),
+            "-te",
+            str(int(args.total_epoch)),
+            "-se",
+            str(int(args.save_every_epoch)),
+            "-pg",
+            str(pre_g) if pre_g.exists() else "",
+            "-pd",
+            str(pre_d) if pre_d.exists() else "",
+            "-l",
+            str(int(args.if_latest)),
+            "-c",
+            str(int(args.if_cache_gpu)),
+            "-sw",
+            str(int(args.save_every_weights)),
+            "-v",
+            args.version,
+        ]
+
+        # Run training via Popen so we can handle Ctrl+C and then post-export weights.
+        print("[rvc] $", " ".join(train_cmd))
+        p = subprocess.Popen(train_cmd, cwd=str(rt), env=run_env)
+        try:
+            rc = p.wait()
+        except KeyboardInterrupt:
+            print("\n[rvc] caught Ctrl+C; stopping training ...")
+            # Forward SIGINT to the child (it is likely already received from the TTY),
+            # then wait for it to exit.
+            try:
+                p.send_signal(signal.SIGINT)
+            except Exception:
+                pass
+            try:
+                rc = p.wait(timeout=60)
+            except Exception:
+                # Fall back to terminate if it doesn't exit in time.
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+                rc = p.wait()
+
+            if args.export_latest_on_interrupt:
+                export_cmd = [
+                    sys.executable,
+                    str(Path(__file__).resolve().parent / "rvc_export_latest_weights.py"),
+                    "--exp-name",
+                    args.exp_name,
+                    "--out-name",
+                    args.exp_name,
+                    "--sr-tag",
+                    args.sr_tag,
+                    "--version",
+                    args.version,
+                    "--if-f0",
+                    "1" if args.if_f0 else "0",
+                ]
+                print("[rvc] exporting inference weights from latest saved checkpoint ...")
+                try:
+                    _run(export_cmd, cwd=Path(__file__).resolve().parents[1], env=run_env)
+                except Exception as e:
+                    print(f"[rvc] WARN: export failed (you can rerun manually): {e}")
+
+            raise SystemExit(130)
+
+        # Upstream train.py ends with `os._exit(2333333)` once it saves the final checkpoint.
+        # On Linux this becomes returncode 2333333 % 256 == 149.
+        if rc not in (0, 149):
+            raise subprocess.CalledProcessError(rc, train_cmd)
 
     model_pth = rt / "assets" / "weights" / f"{args.exp_name}.pth"
     print("")
