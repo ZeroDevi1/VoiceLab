@@ -301,28 +301,38 @@ def run(args: Args) -> int:
             raise SystemExit(f"[prepare_xuan] failed to parse list: {list_path}: {exc}") from exc
 
     text_normalizer = _TextNormalizer(use_wetext=args.use_wetext)
-    if args.backend == "openai-whisper":
-        transcriber = _WhisperTranscriber(
-            whisper_model=args.whisper_model,
-            device=args.device,
-            language=args.language,
-            batch_size=args.whisper_batch_size,
-            beam_size=args.whisper_beam_size,
-        )
-    elif args.backend == "faster-whisper":
-        transcriber = _FasterWhisperTranscriber(
-            model_name=args.whisper_model,
-            device=args.device,
-            device_index=args.device_index,
-            compute_type=args.compute_type,
-            language=args.language,
-            beam_size=args.whisper_beam_size,
-            vad_filter=args.vad_filter,
-            download_root=(args.faster_whisper_download_root or None),
-            local_files_only=bool(args.faster_whisper_local_files_only),
-        )
-    else:
-        raise ValueError(f"Unknown backend: {args.backend}")
+
+    # Lazily construct ASR transcriber only when we actually need ASR.
+    # This allows "list text only" runs to avoid installing ASR extras.
+    transcriber = None
+
+    def get_transcriber():
+        nonlocal transcriber
+        if transcriber is not None:
+            return transcriber
+        if args.backend == "openai-whisper":
+            transcriber = _WhisperTranscriber(
+                whisper_model=args.whisper_model,
+                device=args.device,
+                language=args.language,
+                batch_size=args.whisper_batch_size,
+                beam_size=args.whisper_beam_size,
+            )
+        elif args.backend == "faster-whisper":
+            transcriber = _FasterWhisperTranscriber(
+                model_name=args.whisper_model,
+                device=args.device,
+                device_index=args.device_index,
+                compute_type=args.compute_type,
+                language=args.language,
+                beam_size=args.whisper_beam_size,
+                vad_filter=args.vad_filter,
+                download_root=(args.faster_whisper_download_root or None),
+                local_files_only=bool(args.faster_whisper_local_files_only),
+            )
+        else:
+            raise ValueError(f"Unknown backend: {args.backend}")
+        return transcriber
 
     # Build transcription list
     records: list[dict] = []
@@ -358,7 +368,7 @@ def run(args: Args) -> int:
                 continue
 
             try:
-                text_raw = transcriber.transcribe(audio_16k)
+                text_raw = get_transcriber().transcribe(audio_16k)
             except Exception as exc:
                 print(f"[prepare_xuan] Whisper failed for {wav_path.name}: {exc}")
                 continue

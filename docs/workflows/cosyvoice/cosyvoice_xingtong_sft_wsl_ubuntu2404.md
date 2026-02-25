@@ -94,14 +94,19 @@ done
 
 ---
 
-## 3) 生成 SFT 数据（Whisper 转写 -> kaldi 目录）
+## 3) 生成 SFT 数据（优先用 `.list` 文本；缺失再转写 -> kaldi 目录）
 
 目标产物：
 - `data/xingtong_sft/metadata.jsonl`
 - `data/xingtong_sft/train/{wav.scp,text,utt2spk,spk2utt,instruct}`
 - `data/xingtong_sft/dev/{...}`
 
-推荐命令（faster-whisper large-v3 + VAD）：
+> 如果你已经有同名 `.list` 文本标注（`audio_path|speaker|lang|text`），则 **ASR 转写是可选的**：脚本会优先用 `.list` 第 4 列 `text`；
+> 仅当某条音频在 `.list` 里没有文本时，才会 fallback 跑 ASR。
+>
+> 统一 `.list` 格式与规则见：`docs/datasets/list_annotations.md`
+
+推荐命令（faster-whisper large-v3 + VAD；带 `--list` 让标注文本优先）：
 
 ```bash
 cd "$WORKFLOW_DIR"
@@ -110,6 +115,7 @@ uv run python tools/prepare_xuan_sft_dataset.py \
   --wav_dir "$XINGTONG_WAV_DIR" \
   --out_root "$XINGTONG_SFT_ROOT" \
   --spk_id "$XINGTONG_SPK_ID" \
+  --list "/mnt/c/AIGC/数据集/标注文件/XingTong.list" \
   --backend faster-whisper \
   --whisper_model large-v3 \
   --device cuda \

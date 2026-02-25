@@ -128,9 +128,14 @@ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$DREAM_WAV
 
 ---
 
-## 5) 生成 SFT 数据（faster-whisper 转写 -> kaldi 目录）
+## 5) 生成 SFT 数据（优先用 `.list` 文本；缺失再转写 -> kaldi 目录）
 
 用 `tools/prepare_xuan_sft_dataset.py`（该脚本会产出 `metadata.jsonl` + `train/dev` 的 kaldi 文件）：
+
+> 如果你已经有同名 `.list` 文本标注（`audio_path|speaker|lang|text`），则 **ASR 转写是可选的**：脚本会优先用 `.list` 第 4 列 `text`；
+> 仅当某条音频在 `.list` 里没有文本时，才会 fallback 跑 ASR。
+>
+> 统一 `.list` 格式与规则见：`docs/datasets/list_annotations.md`
 
 ```bash
 cd "$WORKFLOW_DIR"
@@ -144,6 +149,7 @@ uv run python tools/prepare_xuan_sft_dataset.py \
   --wav_dir "$DREAM_WAV_DIR" \
   --out_root "$DREAM_SFT_ROOT" \
   --spk_id "$DREAM_SPK_ID" \
+  --list "/mnt/c/AIGC/数据集/标注文件/Dream.list" \
   --backend faster-whisper \
   --whisper_model large-v3 \
   --device cuda \

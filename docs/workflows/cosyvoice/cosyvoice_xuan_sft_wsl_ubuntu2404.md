@@ -160,7 +160,22 @@ uv run python tools/download_pretrained_cosyvoice3.py --source modelscope
 
 ### 5.1 Whisper 转写 + 生成 `data/xuan_sft`
 
-（推荐）用 faster-whisper + VAD：
+如果你已经有同名 `.list` 文本标注（`audio_path|speaker|lang|text`），则 **ASR 转写是可选的**：
+- 脚本会优先用 `.list` 第 4 列 `text`
+- 仅当某条音频在 `.list` 里没有文本时，才会 fallback 跑 ASR
+
+统一 `.list` 格式与规则见：`docs/datasets/list_annotations.md`
+
+（推荐）已有 `.list` 的场景（不需要跑 ASR；也不强依赖安装 `--extra asr`）：
+
+```bash
+cd "$WORKFLOW_DIR"
+uv run python tools/prepare_xuan_sft_dataset.py --wav_dir "$XUAN_WAV_DIR" \
+  --out_root data/xuan_sft --spk_id xuan \
+  --list "/mnt/c/AIGC/数据集/标注文件/xuan.list"
+```
+
+如果你没有 `.list`（或你希望完全依赖 ASR 生成文本），再用 faster-whisper + VAD：
 
 ```bash
 cd "$WORKFLOW_DIR"
