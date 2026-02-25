@@ -5,6 +5,16 @@ import sys
 from pathlib import Path
 
 
+def _ensure_repo_root_pythonpath() -> None:
+    # Make `import voicelab.*` work when executing tools from `workflows/rvc/`.
+    root = Path(__file__).resolve().parents[3]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+
+_ensure_repo_root_pythonpath()
+
+
 def workflow_root() -> Path:
     # .../VoiceLab/workflows/rvc/tools/voicelab_bootstrap.py -> .../VoiceLab/workflows/rvc
     return Path(__file__).resolve().parents[1]
@@ -70,4 +80,3 @@ def ensure_runtime_pythonpath() -> dict[str, Path]:
     if str(rt) not in sys.path:
         sys.path.insert(0, str(rt))
     return {"runtime": rt}
-

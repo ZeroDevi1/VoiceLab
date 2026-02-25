@@ -1,8 +1,12 @@
-# GPT-SoVITS（占位）
+# GPT-SoVITS
 
-本目录仅用于预留 workflow 结构（后续再把 GPT-SoVITS 的数据/训练/推理流程抽到这里）。
+本目录提供 VoiceLab 风格的 GPT-SoVITS workflow（数据准备 + 训练入口），并与本仓库统一的 `.list` 标注格式打通。
 
-建议把上游仓库 clone 到：
+文档入口：
+- `docs/workflows/gpt_sovits/gpt_sovits_prepare_train_wsl_ubuntu2404.md`
+- `.list` 统一规则：`docs/datasets/list_annotations.md`
+
+上游仓库位于：
 
 ```bash
 cd "${VOICELAB_DIR:-$PWD}"

@@ -94,6 +94,9 @@ uv run python tools/rvc_stage_dataset.py \
   --dst "$VOICELAB_DIR/datasets/XingTong"
 ```
 
+> `.list` 标注：stage 时会把源目录内的同名 `*.list` 一并复制；如果源目录没有同名 `.list`，会尝试从 `/mnt/c/AIGC/数据集/标注文件/<同名>.list` 补拷贝到目标目录。
+> 统一 `.list` 格式与规则见：`docs/datasets/list_annotations.md`
+
 之后训练时直接指向 WSL 路径即可：
 
 ```bash
@@ -110,6 +113,10 @@ uv run python tools/rvc_train.py --stage-dataset
 
 数据集：
 - `$VOICELAB_DIR/datasets/XingTong`（约 1500 条 wav，WSL 原生路径，推荐）
+
+`.list` 行为（重要）：
+- 如果数据集目录存在同名 `.list`（例如 `XingTong/XingTong.list`），训练时会**只预处理 `.list` 中列出的音频**（音频白名单）。
+- RVC 不使用文本标注；`.list` 的 `speaker/lang/text` 对 RVC 仅作备注。
 
 执行：
 

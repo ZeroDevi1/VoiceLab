@@ -32,6 +32,12 @@ uv run -m voicelab bootstrap
 - RVC（训练 + 推理）
   - `docs/workflows/rvc/rvc_xingtong_wsl_ubuntu2404.md`
   - `docs/workflows/rvc/rvc_xuan_wsl_ubuntu2404.md`
+- GPT-SoVITS（数据准备 + 训练入口）
+  - `docs/workflows/gpt_sovits/gpt_sovits_prepare_train_wsl_ubuntu2404.md`
+
+## Datasets
+
+- `.list` 标注格式与使用：`docs/datasets/list_annotations.md`
 
 ## Wiki
 

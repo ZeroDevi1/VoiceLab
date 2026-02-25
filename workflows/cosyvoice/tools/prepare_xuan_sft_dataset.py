@@ -8,6 +8,11 @@ from typing import Iterable
 
 from tqdm import tqdm
 
+from voicelab_bootstrap import ensure_sys_path
+
+ensure_sys_path()
+
+from voicelab.list_annotations import find_same_name_list, parse_list  # noqa: E402
 
 INSTRUCT_DEFAULT = "You are a helpful assistant.<|endofprompt|>"
 
@@ -204,6 +209,9 @@ class Args:
     wav_dir: Path
     out_root: Path
     spk_id: str
+    list_path: Path | None
+    prefer_list: bool
+    list_required_text: bool
     backend: str
     whisper_model: str
     device: str
@@ -268,6 +276,30 @@ def run(args: Args) -> int:
         print(f"[prepare_xuan] No .wav found in {args.wav_dir}")
         return 2
 
+    # Optional: load text annotations from `.list` (audio|speaker|lang|text).
+    # We map by basename and stem so list entries can be absolute paths or different extensions.
+    text_by_basename: dict[str, str] = {}
+    text_by_stem: dict[str, str] = {}
+    list_path: Path | None = args.list_path
+    if list_path is None and args.prefer_list:
+        list_path = find_same_name_list(args.wav_dir) or find_same_name_list(args.wav_dir.parent)
+    if list_path is not None and list_path.exists():
+        try:
+            rows = parse_list(list_path)
+            for row in rows:
+                if not row.audio:
+                    continue
+                if row.text is None or not str(row.text).strip():
+                    # Keep "missing text" out of the map; we'll fallback to ASR when needed.
+                    continue
+                base = Path(row.audio).name
+                stem = Path(row.audio).stem
+                text_by_basename.setdefault(base, str(row.text).strip())
+                text_by_stem.setdefault(stem, str(row.text).strip())
+            print(f"[prepare_xuan] list text enabled: {list_path} (rows={len(rows)} mapped={len(text_by_stem)})")
+        except Exception as exc:
+            raise SystemExit(f"[prepare_xuan] failed to parse list: {list_path}: {exc}") from exc
+
     text_normalizer = _TextNormalizer(use_wetext=args.use_wetext)
     if args.backend == "openai-whisper":
         transcriber = _WhisperTranscriber(
@@ -303,19 +335,33 @@ def run(args: Args) -> int:
             print(f"[prepare_xuan] Skip {wav_path.name}: duration {dur:.2f}s > {args.max_sec:.2f}s")
             continue
 
-        try:
-            audio_16k, sr = _load_audio_16k_mono(wav_path)
-            if sr != 16000:
-                print(f"[prepare_xuan] WARN: {wav_path.name} resample failed to 16k (sr={sr})")
-        except Exception as exc:
-            print(f"[prepare_xuan] Failed to load {wav_path}: {exc}")
-            continue
+        text_src = "asr"
+        text_raw = ""
 
-        try:
-            text_raw = transcriber.transcribe(audio_16k)
-        except Exception as exc:
-            print(f"[prepare_xuan] Whisper failed for {wav_path.name}: {exc}")
-            continue
+        # Prefer list text if available.
+        if text_by_basename or text_by_stem:
+            text_raw = text_by_basename.get(wav_path.name) or text_by_stem.get(wav_path.stem) or ""
+            if text_raw.strip():
+                text_src = "list"
+            elif args.list_required_text:
+                # Explicitly fallback to ASR if list is enabled but lacks a usable text for this item.
+                text_src = "asr"
+                text_raw = ""
+
+        if text_src == "asr":
+            try:
+                audio_16k, sr = _load_audio_16k_mono(wav_path)
+                if sr != 16000:
+                    print(f"[prepare_xuan] WARN: {wav_path.name} resample failed to 16k (sr={sr})")
+            except Exception as exc:
+                print(f"[prepare_xuan] Failed to load {wav_path}: {exc}")
+                continue
+
+            try:
+                text_raw = transcriber.transcribe(audio_16k)
+            except Exception as exc:
+                print(f"[prepare_xuan] Whisper failed for {wav_path.name}: {exc}")
+                continue
 
         text = text_normalizer.normalize(text_raw)
         if not text:
@@ -328,6 +374,7 @@ def run(args: Args) -> int:
             "spk": args.spk_id,
             "text_raw": text_raw,
             "text": text,
+            "text_src": text_src,
         }
         _append_jsonl_utf8(metadata_path, rec)
         records.append(rec)
@@ -375,6 +422,31 @@ def main() -> int:
     parser.add_argument("--wav_dir", type=str, required=True, help="Directory containing .wav files.")
     parser.add_argument("--out_root", type=str, default="data/xuan_sft", help="Output root directory under repo.")
     parser.add_argument("--spk_id", type=str, default="xuan", help="Speaker id for utt2spk/spk2utt.")
+    parser.add_argument("--list", type=str, default="", help="Optional .list annotation file (audio|speaker|lang|text).")
+    parser.add_argument(
+        "--prefer-list",
+        action="store_true",
+        default=True,
+        help="Prefer same-name <wav_dir>/<wav_dir>.list or <parent>/<parent>.list if present (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-prefer-list",
+        action="store_false",
+        dest="prefer_list",
+        help="Disable auto-detecting same-name list file.",
+    )
+    parser.add_argument(
+        "--list-required-text",
+        action="store_true",
+        default=True,
+        help="When list is enabled, require non-empty text; fallback to ASR if missing (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-list-required-text",
+        action="store_false",
+        dest="list_required_text",
+        help="If list is enabled and text is missing, do not fallback to ASR (will likely skip item).",
+    )
     parser.add_argument(
         "--backend",
         type=str,
@@ -431,6 +503,9 @@ def main() -> int:
         wav_dir=Path(ns.wav_dir),
         out_root=Path(ns.out_root),
         spk_id=str(ns.spk_id),
+        list_path=(Path(ns.list).expanduser() if str(ns.list).strip() else None),
+        prefer_list=bool(ns.prefer_list),
+        list_required_text=bool(ns.list_required_text),
         backend=str(ns.backend),
         whisper_model=str(ns.whisper_model),
         device=str(ns.device),

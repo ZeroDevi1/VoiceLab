@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import signal
@@ -12,6 +13,7 @@ from random import shuffle
 from rvc_init_runtime import init_runtime
 from rvc_stage_dataset import stage_dataset
 from voicelab_bootstrap import voicelab_root
+from voicelab.list_annotations import AUDIO_EXTS, find_same_name_list, parse_list, resolve_audio_for_dataset
 
 
 def _run(
@@ -122,6 +124,47 @@ def _write_filelist(
     # Note: if `logs/mute` isn't present in runtime, training still works, but upstream expects it.
 
 
+def _collect_audio_files(dataset_dir: Path) -> list[Path]:
+    out: list[Path] = []
+    for p in sorted(dataset_dir.iterdir()):
+        if p.is_file() and p.suffix.lower() in AUDIO_EXTS:
+            out.append(p)
+    return out
+
+
+def _materialize_preprocess_input_dir(inp_dir: Path, audio_paths: list[Path]) -> dict[str, int]:
+    """
+    Create a directory containing only audio files (symlink or copy) so upstream preprocess.py
+    won't try to load non-audio files (e.g. *.list) from the dataset directory.
+    """
+    if inp_dir.exists():
+        shutil.rmtree(inp_dir)
+    inp_dir.mkdir(parents=True, exist_ok=True)
+
+    linked = 0
+    copied = 0
+    for src in audio_paths:
+        # Avoid collisions on basename.
+        name = src.name
+        dst = inp_dir / name
+        if dst.exists():
+            i = 1
+            while True:
+                cand = inp_dir / f"{src.stem}__dup{i}{src.suffix}"
+                if not cand.exists():
+                    dst = cand
+                    break
+                i += 1
+        try:
+            os.symlink(str(src.resolve()), str(dst))
+            linked += 1
+        except Exception:
+            shutil.copy2(src, dst)
+            copied += 1
+
+    return {"selected": len(audio_paths), "linked": linked, "copied": copied}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Train RVC model for XingTong dataset (v2 + 48k + f0).")
     ap.add_argument("--exp-name", default="xingtong_v2_48k_f0")
@@ -146,6 +189,23 @@ def main() -> int:
     ap.add_argument("--if-f0", action="store_true", default=True)
     ap.add_argument("--preprocess-np", type=int, default=8, help="Preprocess/extract parallelism.")
     ap.add_argument("--per", type=float, default=3.7, help="Preprocess chunk length (seconds).")
+    ap.add_argument(
+        "--list",
+        default=None,
+        help="Optional annotation list file. If set, it is used as an audio allowlist for preprocessing.",
+    )
+    ap.add_argument(
+        "--prefer-list",
+        action="store_true",
+        default=True,
+        help="Prefer same-name <dataset>/<dataset>.list if present (default: enabled).",
+    )
+    ap.add_argument(
+        "--no-prefer-list",
+        action="store_false",
+        dest="prefer_list",
+        help="Disable auto-detecting same-name list file under the dataset directory.",
+    )
 
     ap.add_argument("--gpu", default="0", help="GPU id string used by upstream scripts.")
     ap.add_argument("--batch-size", type=int, default=4)
@@ -216,13 +276,52 @@ def main() -> int:
 
     # Step 1: preprocess dataset
     if not args.skip_preprocess:
+        # If a .list exists, use it as an audio allowlist; otherwise use all audio files in the dataset dir.
+        list_path: Path | None = Path(args.list).expanduser() if args.list else None
+        if list_path is None and args.prefer_list:
+            list_path = find_same_name_list(dataset_dir)
+
+        audio_paths: list[Path] = []
+        missing = 0
+        if list_path is not None and list_path.exists():
+            rows = parse_list(list_path)
+            seen: set[str] = set()
+            for row in rows:
+                resolved = resolve_audio_for_dataset(row.audio, dataset_dir)
+                if resolved is None or not resolved.exists() or resolved.suffix.lower() not in AUDIO_EXTS:
+                    missing += 1
+                    continue
+                key = str(resolved.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                audio_paths.append(resolved)
+            print(f"[rvc] list allowlist: {list_path}")
+            print(f"[rvc] list selected={len(audio_paths)} missing={missing}")
+        else:
+            audio_paths = _collect_audio_files(dataset_dir)
+            print("[rvc] list allowlist: (none)")
+            print(f"[rvc] dataset audio files: {len(audio_paths)}")
+
+        if not audio_paths:
+            raise SystemExit(
+                f"No audio files selected for preprocess.\n"
+                f"  dataset_dir={dataset_dir}\n"
+                f"  list={list_path if list_path else '(none)'}\n"
+                f"Supported extensions: {sorted(AUDIO_EXTS)}"
+            )
+
+        preprocess_inp_dir = (rt / exp_rel / "_dataset_input").resolve()
+        stats = _materialize_preprocess_input_dir(preprocess_inp_dir, audio_paths)
+        print(f"[rvc] preprocess input dir: {preprocess_inp_dir} (linked={stats['linked']} copied={stats['copied']})")
+
         # upstream preprocess.py opens exp_dir/preprocess.log before mkdir, so ensure it exists.
         (rt / exp_rel).mkdir(parents=True, exist_ok=True)
         _run(
             [
                 sys.executable,
                 "infer/modules/train/preprocess.py",
-                str(dataset_dir),
+                str(preprocess_inp_dir),
                 str(int(args.sr)),
                 str(int(args.preprocess_np)),
                 str(exp_rel),

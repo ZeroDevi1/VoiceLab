@@ -97,6 +97,9 @@ uv run python tools/rvc_stage_dataset.py \
   --dst "$VOICELAB_DIR/datasets/xuan"
 ```
 
+> `.list` 标注：stage 时会把源目录内的同名 `*.list` 一并复制；如果源目录没有同名 `.list`，会尝试从 `/mnt/c/AIGC/数据集/标注文件/<同名>.list` 补拷贝到目标目录。
+> 统一 `.list` 格式与规则见：`docs/datasets/list_annotations.md`
+
 复制完成后，确认文件数一致：
 
 ```bash
@@ -126,6 +129,10 @@ uv run python tools/rvc_train.py \
   --save-every-epoch 5 \
   --quiet-warnings
 ```
+
+`.list` 行为（重要）：
+- 如果数据集目录存在同名 `.list`（例如 `xuan/xuan.list`），训练时会**只预处理 `.list` 中列出的音频**（音频白名单）。
+- RVC 不使用文本标注；`.list` 的 `speaker/lang/text` 对 RVC 仅作备注。
 
 输出位置（重要）：
 - 实验目录：`workflows/rvc/runtime/logs/xuan_v2_48k_f0/`

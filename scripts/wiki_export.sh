@@ -56,12 +56,14 @@ copy "docs/index.md" "Home.md"
 # Format: "source_path|Wiki Page Name (file name without .md)"
 pages=(
   "docs/WIKI_SYNC.md|Wiki 同步说明"
+  "docs/datasets/list_annotations.md|数据集 list 标注格式与使用"
   "docs/workflows/rvc/rvc_xingtong_wsl_ubuntu2404.md|RVC 星瞳（WSL Ubuntu24.04）"
   "docs/workflows/rvc/rvc_xuan_wsl_ubuntu2404.md|RVC xuan（WSL Ubuntu24.04）"
   "docs/workflows/cosyvoice/cosyvoice_xuan_sft_wsl_ubuntu2404.md|CosyVoice xuan SFT（WSL Ubuntu24.04）"
   "docs/workflows/cosyvoice/cosyvoice_sft_param_playbook_wsl_ubuntu2404.md|CosyVoice SFT 参数手册（WSL Ubuntu24.04）"
   "docs/workflows/cosyvoice/cosyvoice_xingtong_sft_wsl_ubuntu2404.md|CosyVoice 星瞳 SFT（WSL Ubuntu24.04）"
   "docs/workflows/cosyvoice/cosyvoice_dream_sft_wsl_ubuntu2404.md|CosyVoice Dream SFT（WSL Ubuntu24.04）"
+  "docs/workflows/gpt_sovits/gpt_sovits_prepare_train_wsl_ubuntu2404.md|GPT-SoVITS 数据准备与训练入口（WSL Ubuntu24.04）"
 )
 
 sidebar="${out_dir}/_Sidebar.md"
