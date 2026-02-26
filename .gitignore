@@ -5,7 +5,7 @@ vendor/
 **/.venv/
 
 ## Large training artifacts (never tracked)
-datasets/
+/datasets/
 workflows/**/data/
 workflows/**/exp/
 workflows/**/pretrained_models/
