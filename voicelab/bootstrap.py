@@ -60,7 +60,7 @@ def apply_git_mirror_prefix(url: str, prefix: str | None) -> str:
         return url
     p = prefix.rstrip("/") + "/"
     # For ghproxy-style mirrors, the expected form is:
-    #   https://ghproxy.com/https://github.com/<owner>/<repo>.git
+    #   https://github.com/<owner>/<repo>.git
     return f"{p}{url}"
 
 

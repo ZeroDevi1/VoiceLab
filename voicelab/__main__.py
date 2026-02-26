@@ -217,7 +217,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
     git_mirror_prefix = (
         args.git_mirror_prefix
         or os.environ.get("VOICELAB_GIT_MIRROR_PREFIX")
-        or ("https://ghproxy.com/" if profile == "cn" else None)
+        or ("" if profile == "cn" else None)
     )
 
     workflows = parse_workflows(str(args.workflows or ""))
@@ -359,7 +359,7 @@ def main() -> int:
     p_init.add_argument(
         "--git-mirror-prefix",
         default=None,
-        help="Optional GitHub mirror prefix (e.g. https://ghproxy.com/) for cloning/updating vendor repos.",
+        help="Optional GitHub mirror prefix (e.g. ) for cloning/updating vendor repos.",
     )
     p_init.set_defaults(func=cmd_init)
 
@@ -372,7 +372,7 @@ def main() -> int:
     p_sync.add_argument(
         "--git-mirror-prefix",
         default=None,
-        help="Optional GitHub mirror prefix (e.g. https://ghproxy.com/) for cloning/updating vendor repos.",
+        help="Optional GitHub mirror prefix (e.g. ) for cloning/updating vendor repos.",
     )
     p_sync.set_defaults(func=cmd_vendor_sync)
 

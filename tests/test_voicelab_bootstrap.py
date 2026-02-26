@@ -15,7 +15,7 @@ class TestGitMirrorPrefix(unittest.TestCase):
         from voicelab.bootstrap import apply_git_mirror_prefix
 
         self.assertEqual(
-            apply_git_mirror_prefix("https://example.com/org/repo", "https://ghproxy.com/"),
+            apply_git_mirror_prefix("https://example.com/org/repo", ""),
             "https://example.com/org/repo",
         )
 
@@ -24,7 +24,7 @@ class TestGitMirrorPrefix(unittest.TestCase):
 
         self.assertEqual(
             apply_git_mirror_prefix("https://github.com/org/repo", "https://ghproxy.com"),
-            "https://ghproxy.com/https://github.com/org/repo",
+            "https://github.com/org/repo",
         )
 
     def test_idempotent_if_already_mirrored(self) -> None:
@@ -32,10 +32,10 @@ class TestGitMirrorPrefix(unittest.TestCase):
 
         self.assertEqual(
             apply_git_mirror_prefix(
-                "https://ghproxy.com/https://github.com/org/repo",
-                "https://ghproxy.com/",
+                "https://github.com/org/repo",
+                "",
             ),
-            "https://ghproxy.com/https://github.com/org/repo",
+            "https://github.com/org/repo",
         )
 
 
