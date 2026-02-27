@@ -181,6 +181,189 @@ def _patch_sdpa_for_onnx_export():
         F.scaled_dot_product_attention = orig  # type: ignore[assignment]
 
 
+@contextlib.contextmanager
+def _patch_stft_for_onnx_export():
+    """
+    使用 Conv1d 数学等价替换 torch.stft，绕过 legacy ONNX exporter 对复数/aten::stft 的限制。
+
+    说明：
+    - 该补丁只在导出期间启用，目标是让导出图只包含基础算子（Conv/Pad/Trig 等），更利于 opset 17
+      以及 tract-onnx 这类纯 Rust runtime 的兼容性。
+    - 为避免 ONNX 图中出现 complex dtype，这里会强制返回与 `return_complex=False` 等价的实数表示：
+      [..., 2] 的 (real, imag) 对。
+    """
+
+    import math
+
+    import torch
+    import torch.nn.functional as F
+
+    orig_stft = torch.stft
+    warned = {"force_real": False}
+
+    def stft_fallback(
+        input,  # noqa: A002 - keep torch.stft signature
+        n_fft,
+        hop_length=None,
+        win_length=None,
+        window=None,
+        center=True,
+        pad_mode="reflect",
+        normalized=False,
+        onesided=True,
+        return_complex=None,
+    ):
+        # 只覆盖推理/导出常见路径；遇到非常规输入/参数则回退原实现，避免静默导出错误图。
+        if not isinstance(input, torch.Tensor):
+            return orig_stft(
+                input,
+                n_fft,
+                hop_length=hop_length,
+                win_length=win_length,
+                window=window,
+                center=center,
+                pad_mode=pad_mode,
+                normalized=normalized,
+                onesided=onesided,
+                return_complex=return_complex,
+            )
+
+        if input.is_complex():
+            raise RuntimeError("[export] stft fallback: complex input is not supported.")
+
+        # ONNX legacy exporter 对 complex dtype 支持很差；导出时强制走 real/imag 对表示。
+        if return_complex is None or bool(return_complex) is True:
+            if not warned["force_real"]:
+                print(
+                    "[export] WARN: torch.stft(return_complex=True/None) -> forcing return_complex=False for ONNX export."
+                )
+                warned["force_real"] = True
+        return_complex = False
+
+        try:
+            n_fft_i = int(n_fft)
+        except Exception:
+            return orig_stft(
+                input,
+                n_fft,
+                hop_length=hop_length,
+                win_length=win_length,
+                window=window,
+                center=center,
+                pad_mode=pad_mode,
+                normalized=normalized,
+                onesided=onesided,
+                return_complex=return_complex,
+            )
+
+        hop_i = int(hop_length) if hop_length is not None else (n_fft_i // 4)
+        win_i = int(win_length) if win_length is not None else n_fft_i
+
+        x = input
+        input_was_1d = False
+        if x.dim() == 1:
+            input_was_1d = True
+            x = x.unsqueeze(0)
+        if x.dim() != 2:
+            # 罕见形状：回退原实现（避免导出错误图）。
+            return orig_stft(
+                input,
+                n_fft,
+                hop_length=hop_length,
+                win_length=win_length,
+                window=window,
+                center=center,
+                pad_mode=pad_mode,
+                normalized=normalized,
+                onesided=onesided,
+                return_complex=return_complex,
+            )
+
+        if center:
+            pad = n_fft_i // 2
+            # F.pad 的 1D 反射/复制填充需要 (N, C, L)
+            x = F.pad(x.unsqueeze(1), (pad, pad), mode=str(pad_mode)).squeeze(1)
+
+        device = x.device
+        # 用 float32 构建基底，最后再 cast 到输入 dtype，避免 float16 下精度过差。
+        k = torch.arange(n_fft_i, dtype=torch.float32, device=device).unsqueeze(1)  # [K,1]
+        n = torch.arange(n_fft_i, dtype=torch.float32, device=device).unsqueeze(0)  # [1,N]
+        ang = 2.0 * math.pi * (k * n) / float(n_fft_i)  # [K,N]
+        basis_real = torch.cos(-ang)
+        basis_imag = torch.sin(-ang)
+
+        if window is not None:
+            if not isinstance(window, torch.Tensor):
+                # window 不是 Tensor 时回退，避免 dtype/device 对不上。
+                return orig_stft(
+                    input,
+                    n_fft,
+                    hop_length=hop_length,
+                    win_length=win_length,
+                    window=window,
+                    center=center,
+                    pad_mode=pad_mode,
+                    normalized=normalized,
+                    onesided=onesided,
+                    return_complex=return_complex,
+                )
+            if window.is_complex():
+                raise RuntimeError("[export] stft fallback: complex window is not supported.")
+            w = window.to(device=device, dtype=torch.float32)
+            if int(w.numel()) != int(win_i):
+                # 参数不匹配时直接回退，避免静默行为变化。
+                return orig_stft(
+                    input,
+                    n_fft,
+                    hop_length=hop_length,
+                    win_length=win_length,
+                    window=window,
+                    center=center,
+                    pad_mode=pad_mode,
+                    normalized=normalized,
+                    onesided=onesided,
+                    return_complex=return_complex,
+                )
+            if win_i != n_fft_i:
+                pad_left = (n_fft_i - win_i) // 2
+                pad_right = n_fft_i - win_i - pad_left
+                w = F.pad(w, (pad_left, pad_right))
+            basis_real = basis_real * w.unsqueeze(0)
+            basis_imag = basis_imag * w.unsqueeze(0)
+
+        if normalized:
+            scale = 1.0 / (float(n_fft_i) ** 0.5)
+            basis_real = basis_real * scale
+            basis_imag = basis_imag * scale
+
+        if onesided:
+            freqs = n_fft_i // 2 + 1
+            basis_real = basis_real[:freqs]
+            basis_imag = basis_imag[:freqs]
+        else:
+            freqs = n_fft_i
+
+        # 合并实部/虚部作为卷积核：[out_channels, in_channels, kernel_size]
+        basis = torch.cat([basis_real.unsqueeze(1), basis_imag.unsqueeze(1)], dim=0).to(
+            dtype=x.dtype
+        )
+        y = F.conv1d(x.unsqueeze(1), basis, stride=hop_i)
+
+        # 还原为 torch.stft(return_complex=False) 的输出布局：[B, F, Frames, 2]
+        B = int(x.size(0))
+        frames = int(y.size(-1))
+        y = y.view(B, 2, int(freqs), frames).permute(0, 2, 3, 1).contiguous()
+        if input_was_1d:
+            y = y.squeeze(0)
+        return y
+
+    torch.stft = stft_fallback  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        torch.stft = orig_stft  # type: ignore[assignment]
+
+
 @dataclass(frozen=True)
 class _LlmIoNames:
     prefill_inputs: List[str]
@@ -568,9 +751,10 @@ def main(argv: list[str] | None = None) -> int:
     if not do_constant_folding:
         print("[export] constant folding: disabled (--no_constant_folding)")
 
-    # Patch SDPA for legacy ONNX exporter compatibility.
-    # This helps not only Qwen2 (LLM), but also DiT blocks in Flow which may use SDPA.
-    with _patch_sdpa_for_onnx_export():
+    # 导出期间的兼容性补丁（legacy ONNX exporter）：
+    # - SDPA：帮助 Qwen2（LLM）以及 Flow 内可能用到 SDPA 的 DiT 模块顺利导出。
+    # - STFT：避免图中出现 complex/aten::stft，保持 opset 17 + tract-onnx 友好。
+    with _patch_sdpa_for_onnx_export(), _patch_stft_for_onnx_export():
         # LLM prefill
         t0 = time.time()
         dummy_ids = torch.tensor(
