@@ -113,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
             "May produce a slightly larger graph; runtime behavior should stay the same."
         ),
     )
+    p.add_argument(
+        "--flow_dummy_token_len",
+        type=int,
+        default=256,
+        help="Dummy speech token length for exporting Flow (larger is safer for long texts).",
+    )
     return p
 
 
@@ -229,7 +235,9 @@ def _patch_stft_for_onnx_export():
             )
 
         if input.is_complex():
-            raise RuntimeError("[export] stft fallback: complex input is not supported.")
+            raise RuntimeError(
+                "[export] stft fallback: complex input is not supported."
+            )
 
         # ONNX legacy exporter 对 complex dtype 支持很差；导出时强制走 real/imag 对表示。
         if return_complex is None or bool(return_complex) is True:
@@ -286,8 +294,12 @@ def _patch_stft_for_onnx_export():
 
         device = x.device
         # 用 float32 构建基底，最后再 cast 到输入 dtype，避免 float16 下精度过差。
-        k = torch.arange(n_fft_i, dtype=torch.float32, device=device).unsqueeze(1)  # [K,1]
-        n = torch.arange(n_fft_i, dtype=torch.float32, device=device).unsqueeze(0)  # [1,N]
+        k = torch.arange(n_fft_i, dtype=torch.float32, device=device).unsqueeze(
+            1
+        )  # [K,1]
+        n = torch.arange(n_fft_i, dtype=torch.float32, device=device).unsqueeze(
+            0
+        )  # [1,N]
         ang = 2.0 * math.pi * (k * n) / float(n_fft_i)  # [K,N]
         basis_real = torch.cos(-ang)
         basis_imag = torch.sin(-ang)
@@ -308,7 +320,9 @@ def _patch_stft_for_onnx_export():
                     return_complex=return_complex,
                 )
             if window.is_complex():
-                raise RuntimeError("[export] stft fallback: complex window is not supported.")
+                raise RuntimeError(
+                    "[export] stft fallback: complex window is not supported."
+                )
             w = window.to(device=device, dtype=torch.float32)
             if int(w.numel()) != int(win_i):
                 # 参数不匹配时直接回退，避免静默行为变化。
@@ -545,7 +559,53 @@ def main(argv: list[str] | None = None) -> int:
     flow = cosyvoice.model.flow  # type: ignore[attr-defined]
     hift = cosyvoice.model.hift  # type: ignore[attr-defined]
 
+    # 说明：
+    # - Rust 端的推理停止条件默认是「采样到 stop token」。
+    # - 我们用 pack.json 的 `stopTokenStart` 表示：token_id >= stopTokenStart 视为 stop token。
+    #
+    # 但不同 CosyVoice3 导出/权重可能有两种常见约定：
+    # 1) decoder 的 vocab = speech_token_size + N（N>=1），其中 [speech_token_size..] 是 stop / special tokens
+    # 2) decoder 的 vocab = speech_token_size（没有额外 stop range），此时通常「最后一个 token」是 stop
+    #
+    # 若 pack.json 误把 stopTokenStart 写成 speech_token_size，而 decoder vocab 又恰好等于 speech_token_size，
+    # 则 Rust 端永远采样不到 stop token，会一路跑到 max_len，结果：推理很慢 + 音频容易全是“电音/噪声”。
     speech_token_size = int(getattr(llm, "speech_token_size"))
+    decoder_vocab_size: int | None = None
+    try:
+        dec = getattr(llm, "llm_decoder", None)
+        if dec is not None and hasattr(dec, "out_features"):
+            decoder_vocab_size = int(getattr(dec, "out_features"))
+        elif dec is not None and hasattr(dec, "weight") and hasattr(dec.weight, "shape"):
+            decoder_vocab_size = int(dec.weight.shape[0])
+    except Exception:
+        decoder_vocab_size = None
+
+    stop_token_start = speech_token_size
+    if decoder_vocab_size is not None:
+        if decoder_vocab_size == speech_token_size:
+            # 约定 #2：vocab 内没有额外 stop range；把最后一个 id 当 stop。
+            # speech tokens: [0 .. speech_token_size-2]
+            # stop token: speech_token_size-1
+            speech_token_size = max(1, speech_token_size - 1)
+            stop_token_start = speech_token_size
+            print(
+                "[export] detected decoder_vocab_size == speech_token_size; "
+                f"treating last token as stop (speechTokenSize={speech_token_size}, stopTokenStart={stop_token_start})"
+            )
+        elif decoder_vocab_size < speech_token_size:
+            # 理论上不应该发生：decoder vocab 小于 speech_token_size 代表权重/导出不一致。
+            print(
+                "[export] WARN: decoder_vocab_size < speech_token_size; "
+                f"decoder_vocab_size={decoder_vocab_size} speech_token_size={speech_token_size}. "
+                "Keeping stopTokenStart as speech_token_size, but the pack may be invalid."
+            )
+        else:
+            # 约定 #1：存在 stop range
+            stop_token_start = speech_token_size
+            print(
+                "[export] detected decoder_vocab_size > speech_token_size; "
+                f"stopTokenStart={stop_token_start} decoder_vocab_size={decoder_vocab_size}"
+            )
     token_mel_ratio = int(getattr(flow, "token_mel_ratio", 2))
     sample_rate = int(getattr(cosyvoice, "sample_rate", 24000))
 
@@ -558,7 +618,7 @@ def main(argv: list[str] | None = None) -> int:
         "packVersion": 1,
         "sampleRate": sample_rate,
         "speechTokenSize": speech_token_size,
-        "stopTokenStart": speech_token_size,
+        "stopTokenStart": stop_token_start,
         "endOfPromptTokenId": eop_id,
         "spkEmbedDim": spk_embed_dim,
         "tokenMelRatio": token_mel_ratio,
@@ -689,8 +749,11 @@ def main(argv: list[str] | None = None) -> int:
         def forward(self, speech_tokens, spk_embedding):
             # speech_tokens: [1, T] int64 -> int32
             token = speech_tokens.to(dtype=torch.int32)
-            token_len = torch.tensor(
-                [token.size(1)], dtype=torch.int32, device=token.device
+            # 注意：ONNX 导出时不能用 token.size(1) 这种会在 tracing 期被“固化”的写法。
+            # 否则 token_len 会被静态固定成 dummy_speech 的长度，运行时遇到长文本（例如 T=135）
+            # 会触发 Mul/MatMul/Broadcast 等算子的 10 vs 135 广播错误。
+            token_len = torch.onnx.operators.shape_as_tensor(token)[1:2].to(
+                device=token.device, dtype=torch.int32
             )
             prompt_token = torch.zeros((1, 0), dtype=torch.int32, device=token.device)
             prompt_token_len = torch.tensor([0], dtype=torch.int32, device=token.device)
@@ -805,7 +868,9 @@ def main(argv: list[str] | None = None) -> int:
         # Flow
         print("[export] exporting Flow (this can take a long time) ...")
         t0 = time.time()
-        dummy_speech = torch.zeros((1, 10), dtype=torch.int64, device=device)
+        dummy_speech = torch.zeros(
+            (1, int(args.flow_dummy_token_len)), dtype=torch.int64, device=device
+        )
         dummy_emb = torch.zeros((1, spk_embed_dim), dtype=torch.float32, device=device)
         torch.onnx.export(
             flow_infer,

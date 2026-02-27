@@ -8,6 +8,7 @@ vendor/
 /datasets/
 workflows/**/data/
 workflows/**/exp/
+workflows/**/export_packs/
 workflows/**/pretrained_models/
 workflows/**/tensorboard/
 workflows/**/out_wav/
