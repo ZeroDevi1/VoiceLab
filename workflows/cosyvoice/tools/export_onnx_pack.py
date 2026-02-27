@@ -22,6 +22,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, List, Tuple
@@ -103,6 +104,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip_onnx",
         action="store_true",
         help="Only export pack.json/tokenizer/spk2info (no ONNX).",
+    )
+    p.add_argument(
+        "--no_constant_folding",
+        action="store_true",
+        help=(
+            "Disable ONNX constant folding to speed up export (often helps Flow/HiFT). "
+            "May produce a slightly larger graph; runtime behavior should stay the same."
+        ),
     )
     return p
 
@@ -555,9 +564,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         opset = 17
     print(f"[export] exporting ONNX (opset={opset}) ...")
+    do_constant_folding = not bool(getattr(args, "no_constant_folding", False))
+    if not do_constant_folding:
+        print("[export] constant folding: disabled (--no_constant_folding)")
 
+    # Patch SDPA for legacy ONNX exporter compatibility.
+    # This helps not only Qwen2 (LLM), but also DiT blocks in Flow which may use SDPA.
     with _patch_sdpa_for_onnx_export():
         # LLM prefill
+        t0 = time.time()
         dummy_ids = torch.tensor(
             [[eop_id]], dtype=torch.int64, device=device
         )  # minimal, still includes eop marker
@@ -567,7 +582,7 @@ def main(argv: list[str] | None = None) -> int:
             str(llm_prefill_path),
             export_params=True,
             opset_version=opset,
-            do_constant_folding=True,
+            do_constant_folding=do_constant_folding,
             input_names=io_names.prefill_inputs,
             output_names=io_names.prefill_outputs,
             dynamic_axes={
@@ -575,9 +590,10 @@ def main(argv: list[str] | None = None) -> int:
                 **{name: {2: "past_len"} for name in io_names.prefill_outputs[1:]},
             },
         )
-        print(f"[export] wrote {llm_prefill_path}")
+        print(f"[export] wrote {llm_prefill_path} ({time.time() - t0:.1f}s)")
 
         # LLM decode
+        t0 = time.time()
         with torch.no_grad():
             pre_out = llm_prefill(dummy_ids)
         # pre_out = (logits, *past_flat)
@@ -589,7 +605,7 @@ def main(argv: list[str] | None = None) -> int:
             str(llm_decode_path),
             export_params=True,
             opset_version=opset,
-            do_constant_folding=True,
+            do_constant_folding=do_constant_folding,
             input_names=io_names.decode_inputs,
             output_names=io_names.decode_outputs,
             dynamic_axes={
@@ -600,38 +616,42 @@ def main(argv: list[str] | None = None) -> int:
                 },
             },
         )
-        print(f"[export] wrote {llm_decode_path}")
+        print(f"[export] wrote {llm_decode_path} ({time.time() - t0:.1f}s)")
 
-    # Flow
-    dummy_speech = torch.zeros((1, 10), dtype=torch.int64, device=device)
-    dummy_emb = torch.zeros((1, spk_embed_dim), dtype=torch.float32, device=device)
-    torch.onnx.export(
-        flow_infer,
-        (dummy_speech, dummy_emb),
-        str(flow_path),
-        export_params=True,
-        opset_version=opset,
-        do_constant_folding=True,
-        input_names=["speech_tokens", "spk_embedding"],
-        output_names=["mel"],
-        dynamic_axes={"speech_tokens": {1: "token_len"}, "mel": {2: "mel_len"}},
-    )
-    print(f"[export] wrote {flow_path}")
+        # Flow
+        print("[export] exporting Flow (this can take a long time) ...")
+        t0 = time.time()
+        dummy_speech = torch.zeros((1, 10), dtype=torch.int64, device=device)
+        dummy_emb = torch.zeros((1, spk_embed_dim), dtype=torch.float32, device=device)
+        torch.onnx.export(
+            flow_infer,
+            (dummy_speech, dummy_emb),
+            str(flow_path),
+            export_params=True,
+            opset_version=opset,
+            do_constant_folding=do_constant_folding,
+            input_names=["speech_tokens", "spk_embedding"],
+            output_names=["mel"],
+            dynamic_axes={"speech_tokens": {1: "token_len"}, "mel": {2: "mel_len"}},
+        )
+        print(f"[export] wrote {flow_path} ({time.time() - t0:.1f}s)")
 
-    # HiFT
-    dummy_mel = torch.zeros((1, 80, 20), dtype=torch.float32, device=device)
-    torch.onnx.export(
-        hift_infer,
-        (dummy_mel,),
-        str(hift_path),
-        export_params=True,
-        opset_version=opset,
-        do_constant_folding=True,
-        input_names=["mel"],
-        output_names=["wav"],
-        dynamic_axes={"mel": {2: "mel_len"}, "wav": {1: "wav_len"}},
-    )
-    print(f"[export] wrote {hift_path}")
+        # HiFT
+        print("[export] exporting HiFT ...")
+        t0 = time.time()
+        dummy_mel = torch.zeros((1, 80, 20), dtype=torch.float32, device=device)
+        torch.onnx.export(
+            hift_infer,
+            (dummy_mel,),
+            str(hift_path),
+            export_params=True,
+            opset_version=opset,
+            do_constant_folding=do_constant_folding,
+            input_names=["mel"],
+            output_names=["wav"],
+            dynamic_axes={"mel": {2: "mel_len"}, "wav": {1: "wav_len"}},
+        )
+        print(f"[export] wrote {hift_path} ({time.time() - t0:.1f}s)")
 
     sha = {
         "pack.json": _sha256_file(out_dir / "pack.json"),
