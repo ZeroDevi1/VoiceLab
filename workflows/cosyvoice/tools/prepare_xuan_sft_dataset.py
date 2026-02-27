@@ -1,13 +1,12 @@
 import argparse
+import hashlib
 import json
 import re
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from tqdm import tqdm
-
 from voicelab_bootstrap import ensure_sys_path
 
 ensure_sys_path()
@@ -128,8 +127,22 @@ def _audio_duration_sec(wav_path: Path) -> float:
 
 
 class _WhisperTranscriber:
-    def __init__(self, whisper_model: str, device: str, language: str, batch_size: int, beam_size: int):
-        import whisper
+    def __init__(
+        self,
+        whisper_model: str,
+        device: str,
+        language: str,
+        batch_size: int,
+        beam_size: int,
+    ):
+        try:
+            import whisper  # openai-whisper 提供的模块名就是 whisper
+        except ModuleNotFoundError as exc:
+            raise SystemExit(
+                "[prepare_xuan] 未安装 openai-whisper（模块名 whisper）。\n"
+                "[prepare_xuan] 解决：在 workflows/cosyvoice 下执行：uv sync\n"
+                "[prepare_xuan] 或改用 faster-whisper：--backend faster-whisper（并安装：uv sync --extra asr）"
+            ) from exc
 
         self._device = device
         self._language = language
@@ -164,7 +177,13 @@ class _FasterWhisperTranscriber:
         download_root: str | None,
         local_files_only: bool,
     ):
-        from faster_whisper import WhisperModel  # type: ignore
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+        except ModuleNotFoundError as exc:
+            raise SystemExit(
+                "[prepare_xuan] 未安装 faster-whisper。\n"
+                "[prepare_xuan] 解决：在 workflows/cosyvoice 下执行：uv sync --extra asr"
+            ) from exc
 
         self._language = language
         self._beam_size = beam_size
@@ -232,7 +251,9 @@ class Args:
     faster_whisper_local_files_only: bool
 
 
-def _write_kaldi_dir(out_dir: Path, items: list[dict], spk_id: str, instruct: str) -> None:
+def _write_kaldi_dir(
+    out_dir: Path, items: list[dict], spk_id: str, instruct: str
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     wav_scp_lines: list[str] = []
     text_lines: list[str] = []
@@ -252,11 +273,20 @@ def _write_kaldi_dir(out_dir: Path, items: list[dict], spk_id: str, instruct: st
 
     spk2utt_line = f"{spk_id} " + " ".join(utts) if utts else f"{spk_id}"
 
-    _write_text_utf8(out_dir / "wav.scp", "\n".join(wav_scp_lines) + ("\n" if wav_scp_lines else ""))
-    _write_text_utf8(out_dir / "text", "\n".join(text_lines) + ("\n" if text_lines else ""))
-    _write_text_utf8(out_dir / "utt2spk", "\n".join(utt2spk_lines) + ("\n" if utt2spk_lines else ""))
+    _write_text_utf8(
+        out_dir / "wav.scp", "\n".join(wav_scp_lines) + ("\n" if wav_scp_lines else "")
+    )
+    _write_text_utf8(
+        out_dir / "text", "\n".join(text_lines) + ("\n" if text_lines else "")
+    )
+    _write_text_utf8(
+        out_dir / "utt2spk", "\n".join(utt2spk_lines) + ("\n" if utt2spk_lines else "")
+    )
     _write_text_utf8(out_dir / "spk2utt", spk2utt_line + "\n")
-    _write_text_utf8(out_dir / "instruct", "\n".join(instruct_lines) + ("\n" if instruct_lines else ""))
+    _write_text_utf8(
+        out_dir / "instruct",
+        "\n".join(instruct_lines) + ("\n" if instruct_lines else ""),
+    )
 
 
 def run(args: Args) -> int:
@@ -282,7 +312,9 @@ def run(args: Args) -> int:
     text_by_stem: dict[str, str] = {}
     list_path: Path | None = args.list_path
     if list_path is None and args.prefer_list:
-        list_path = find_same_name_list(args.wav_dir) or find_same_name_list(args.wav_dir.parent)
+        list_path = find_same_name_list(args.wav_dir) or find_same_name_list(
+            args.wav_dir.parent
+        )
     if list_path is not None and list_path.exists():
         try:
             rows = parse_list(list_path)
@@ -296,9 +328,13 @@ def run(args: Args) -> int:
                 stem = Path(row.audio).stem
                 text_by_basename.setdefault(base, str(row.text).strip())
                 text_by_stem.setdefault(stem, str(row.text).strip())
-            print(f"[prepare_xuan] list text enabled: {list_path} (rows={len(rows)} mapped={len(text_by_stem)})")
+            print(
+                f"[prepare_xuan] list text enabled: {list_path} (rows={len(rows)} mapped={len(text_by_stem)})"
+            )
         except Exception as exc:
-            raise SystemExit(f"[prepare_xuan] failed to parse list: {list_path}: {exc}") from exc
+            raise SystemExit(
+                f"[prepare_xuan] failed to parse list: {list_path}: {exc}"
+            ) from exc
 
     text_normalizer = _TextNormalizer(use_wetext=args.use_wetext)
 
@@ -342,7 +378,9 @@ def run(args: Args) -> int:
             continue
         dur = _audio_duration_sec(wav_path)
         if args.max_sec > 0 and dur > args.max_sec:
-            print(f"[prepare_xuan] Skip {wav_path.name}: duration {dur:.2f}s > {args.max_sec:.2f}s")
+            print(
+                f"[prepare_xuan] Skip {wav_path.name}: duration {dur:.2f}s > {args.max_sec:.2f}s"
+            )
             continue
 
         text_src = "asr"
@@ -350,7 +388,11 @@ def run(args: Args) -> int:
 
         # Prefer list text if available.
         if text_by_basename or text_by_stem:
-            text_raw = text_by_basename.get(wav_path.name) or text_by_stem.get(wav_path.stem) or ""
+            text_raw = (
+                text_by_basename.get(wav_path.name)
+                or text_by_stem.get(wav_path.stem)
+                or ""
+            )
             if text_raw.strip():
                 text_src = "list"
             elif args.list_required_text:
@@ -362,7 +404,9 @@ def run(args: Args) -> int:
             try:
                 audio_16k, sr = _load_audio_16k_mono(wav_path)
                 if sr != 16000:
-                    print(f"[prepare_xuan] WARN: {wav_path.name} resample failed to 16k (sr={sr})")
+                    print(
+                        f"[prepare_xuan] WARN: {wav_path.name} resample failed to 16k (sr={sr})"
+                    )
             except Exception as exc:
                 print(f"[prepare_xuan] Failed to load {wav_path}: {exc}")
                 continue
@@ -375,7 +419,9 @@ def run(args: Args) -> int:
 
         text = text_normalizer.normalize(text_raw)
         if not text:
-            print(f"[prepare_xuan] Skip {wav_path.name}: empty text after normalization")
+            print(
+                f"[prepare_xuan] Skip {wav_path.name}: empty text after normalization"
+            )
             continue
 
         rec = {
@@ -403,7 +449,12 @@ def run(args: Args) -> int:
                 if not line:
                     continue
                 obj = json.loads(line)
-                if isinstance(obj, dict) and obj.get("utt") and obj.get("wav") and obj.get("text"):
+                if (
+                    isinstance(obj, dict)
+                    and obj.get("utt")
+                    and obj.get("wav")
+                    and obj.get("text")
+                ):
                     all_records_by_utt[str(obj["utt"])] = obj
 
     all_records = [all_records_by_utt[k] for k in sorted(all_records_by_utt.keys())]
@@ -422,17 +473,35 @@ def run(args: Args) -> int:
     _write_kaldi_dir(args.out_root / "train", train_records, args.spk_id, args.instruct)
     _write_kaldi_dir(args.out_root / "dev", dev_records, args.spk_id, args.instruct)
 
-    print(f"[prepare_xuan] Total={len(all_records)} train={len(train_records)} dev={len(dev_records)}")
+    print(
+        f"[prepare_xuan] Total={len(all_records)} train={len(train_records)} dev={len(dev_records)}"
+    )
     print(f"[prepare_xuan] Wrote {metadata_path}")
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prepare xuan dataset for CosyVoice3 SFT (Whisper + kaldi + instruct).")
-    parser.add_argument("--wav_dir", type=str, required=True, help="Directory containing .wav files.")
-    parser.add_argument("--out_root", type=str, default="data/xuan_sft", help="Output root directory under repo.")
-    parser.add_argument("--spk_id", type=str, default="xuan", help="Speaker id for utt2spk/spk2utt.")
-    parser.add_argument("--list", type=str, default="", help="Optional .list annotation file (audio|speaker|lang|text).")
+    parser = argparse.ArgumentParser(
+        description="Prepare xuan dataset for CosyVoice3 SFT (Whisper + kaldi + instruct)."
+    )
+    parser.add_argument(
+        "--wav_dir", type=str, required=True, help="Directory containing .wav files."
+    )
+    parser.add_argument(
+        "--out_root",
+        type=str,
+        default="data/xuan_sft",
+        help="Output root directory under repo.",
+    )
+    parser.add_argument(
+        "--spk_id", type=str, default="xuan", help="Speaker id for utt2spk/spk2utt."
+    )
+    parser.add_argument(
+        "--list",
+        type=str,
+        default="",
+        help="Optional .list annotation file (audio|speaker|lang|text).",
+    )
     parser.add_argument(
         "--prefer-list",
         action="store_true",
@@ -473,25 +542,72 @@ def main() -> int:
             "For faster-whisper: large-v3 recommended (downloads CTranslate2 model)."
         ),
     )
-    parser.add_argument("--device", type=str, default="cpu", help="Whisper device: cpu or cuda.")
-    parser.add_argument("--device_index", type=int, default=0, help="GPU device index for faster-whisper.")
+    parser.add_argument(
+        "--device", type=str, default="cpu", help="Whisper device: cpu or cuda."
+    )
+    parser.add_argument(
+        "--device_index",
+        type=int,
+        default=0,
+        help="GPU device index for faster-whisper.",
+    )
     parser.add_argument(
         "--compute_type",
         type=str,
         default="",
         help="faster-whisper compute_type, e.g. int8_float16/float16/int8. Default auto based on device.",
     )
-    parser.add_argument("--language", type=str, default="zh", help="Language code for Whisper.")
-    parser.add_argument("--train_ratio", type=float, default=0.98, help="Train split ratio.")
-    parser.add_argument("--seed", type=int, default=1986, help="Random seed for splitting.")
-    parser.add_argument("--instruct", type=str, default=INSTRUCT_DEFAULT, help="Instruct string (CosyVoice3LM requires it).")
-    parser.add_argument("--max_sec", type=float, default=30.0, help="Skip audio longer than this (<=0 to disable).")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite metadata.jsonl (disables resume).")
-    parser.add_argument("--limit", type=int, default=0, help="Only process first N wavs (0 means no limit).")
-    parser.add_argument("--no_wetext", action="store_true", help="Disable wetext normalization (faster; less robust TN).")
-    parser.add_argument("--whisper_batch_size", type=int, default=1, help="Whisper decoding batch_size.")
-    parser.add_argument("--whisper_beam_size", type=int, default=1, help="Whisper beam search size (1 = greedy).")
-    parser.add_argument("--vad_filter", action="store_true", help="Enable VAD filtering (faster-whisper only).")
+    parser.add_argument(
+        "--language", type=str, default="zh", help="Language code for Whisper."
+    )
+    parser.add_argument(
+        "--train_ratio", type=float, default=0.98, help="Train split ratio."
+    )
+    parser.add_argument(
+        "--seed", type=int, default=1986, help="Random seed for splitting."
+    )
+    parser.add_argument(
+        "--instruct",
+        type=str,
+        default=INSTRUCT_DEFAULT,
+        help="Instruct string (CosyVoice3LM requires it).",
+    )
+    parser.add_argument(
+        "--max_sec",
+        type=float,
+        default=30.0,
+        help="Skip audio longer than this (<=0 to disable).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite metadata.jsonl (disables resume).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Only process first N wavs (0 means no limit).",
+    )
+    parser.add_argument(
+        "--no_wetext",
+        action="store_true",
+        help="Disable wetext normalization (faster; less robust TN).",
+    )
+    parser.add_argument(
+        "--whisper_batch_size", type=int, default=1, help="Whisper decoding batch_size."
+    )
+    parser.add_argument(
+        "--whisper_beam_size",
+        type=int,
+        default=1,
+        help="Whisper beam search size (1 = greedy).",
+    )
+    parser.add_argument(
+        "--vad_filter",
+        action="store_true",
+        help="Enable VAD filtering (faster-whisper only).",
+    )
     parser.add_argument(
         "--faster_whisper_download_root",
         type=str,

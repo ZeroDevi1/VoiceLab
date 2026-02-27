@@ -48,7 +48,9 @@ class _TextResolutionError(Exception):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run Speaker SFT inference (CosyVoice3) and save wav outputs.")
+    parser = argparse.ArgumentParser(
+        description="Run Speaker SFT inference (CosyVoice3) and save wav outputs."
+    )
     parser.add_argument("--model_dir", type=str, required=True)
     parser.add_argument(
         "--spk_id",
@@ -58,8 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     text_group = parser.add_mutually_exclusive_group(required=True)
-    text_group.add_argument("--text_file", type=str, default=None, help="Path to a UTF-8 text file to synthesize.")
-    text_group.add_argument("--text", type=str, default=None, help="Inline UTF-8 text to synthesize.")
+    text_group.add_argument(
+        "--text_file",
+        type=str,
+        default=None,
+        help="Path to a UTF-8 text file to synthesize.",
+    )
+    text_group.add_argument(
+        "--text", type=str, default=None, help="Inline UTF-8 text to synthesize."
+    )
 
     parser.add_argument(
         "--prompt_text",
@@ -121,19 +130,34 @@ def build_parser() -> argparse.ArgumentParser:
             "and will still write run.json (and piece_*.wav when --stream) into its parent directory."
         ),
     )
-    parser.add_argument("--stream", action="store_true", help="Use chunk streaming inference.")
+    parser.add_argument(
+        "--stream", action="store_true", help="Use chunk streaming inference."
+    )
     parser.add_argument("--speed", type=float, default=1.0)
-    parser.add_argument("--seed", type=int, default=1986, help="Random seed for reproducible A/B tests.")
+    parser.add_argument(
+        "--seed", type=int, default=1986, help="Random seed for reproducible A/B tests."
+    )
     parser.add_argument(
         "--temperature",
         type=float,
         default=1.0,
         help="LLM sampling temperature (implemented by scaling log-probs before nucleus/RAS).",
     )
-    parser.add_argument("--top_p", type=float, default=0.6, help="LLM sampling top_p for nucleus/RAS.")
-    parser.add_argument("--top_k", type=int, default=10, help="LLM sampling top_k for nucleus/RAS.")
-    parser.add_argument("--win_size", type=int, default=10, help="LLM RAS repetition window size.")
-    parser.add_argument("--tau_r", type=float, default=1.0, help="LLM RAS repetition threshold (higher = less random_sampling).")
+    parser.add_argument(
+        "--top_p", type=float, default=0.6, help="LLM sampling top_p for nucleus/RAS."
+    )
+    parser.add_argument(
+        "--top_k", type=int, default=10, help="LLM sampling top_k for nucleus/RAS."
+    )
+    parser.add_argument(
+        "--win_size", type=int, default=10, help="LLM RAS repetition window size."
+    )
+    parser.add_argument(
+        "--tau_r",
+        type=float,
+        default=1.0,
+        help="LLM RAS repetition threshold (higher = less random_sampling).",
+    )
     parser.add_argument(
         "--text_frontend",
         action=argparse.BooleanOptionalAction,
@@ -155,7 +179,9 @@ def resolve_text(args: argparse.Namespace) -> _ResolvedText:
         text = _read_text_file(text_path)
         if not text:
             raise _TextResolutionError(3, "[infer] text is empty")
-        return _ResolvedText(text=text, text_input="file", text_file=str(args.text_file))
+        return _ResolvedText(
+            text=text, text_input="file", text_file=str(args.text_file)
+        )
 
     if getattr(args, "text", None) is not None:
         text = str(args.text).strip()
@@ -177,7 +203,9 @@ def resolve_output(args: argparse.Namespace) -> tuple[Path, Path | None]:
     if out_wav_raw:
         out_wav = Path(out_wav_raw)
         if out_wav.exists() and out_wav.is_dir():
-            raise _TextResolutionError(17, f"[infer] out_wav points to a directory, expected a file: {out_wav}")
+            raise _TextResolutionError(
+                17, f"[infer] out_wav points to a directory, expected a file: {out_wav}"
+            )
         out_dir = out_wav.parent
         return out_dir, out_wav
 
@@ -189,6 +217,7 @@ def _strip_endofprompt(s: str) -> str:
     # CosyVoice3 uses a special marker token; it's not meant to be spoken.
     return str(s or "").replace("<|endofprompt|>", "").strip()
 
+
 def _extract_prompt_tokens(cosyvoice, *, prompt_text_raw: str, text_frontend: bool):
     """
     CosyVoice3 expects prompt_text tokens (already normalized/extracted by frontend).
@@ -197,7 +226,9 @@ def _extract_prompt_tokens(cosyvoice, *, prompt_text_raw: str, text_frontend: bo
     prompt_text_raw = str(prompt_text_raw or "").strip()
     if not prompt_text_raw:
         return None, None
-    prompt_text_norm = cosyvoice.frontend.text_normalize(prompt_text_raw, split=False, text_frontend=bool(text_frontend))
+    prompt_text_norm = cosyvoice.frontend.text_normalize(
+        prompt_text_raw, split=False, text_frontend=bool(text_frontend)
+    )
     return cosyvoice.frontend._extract_text_token(prompt_text_norm)
 
 
@@ -225,7 +256,9 @@ def _write_run_metadata(
         "prompt_strategy": str(prompt_strategy),
         "prompt_sha1": _sha1_utf8(prompt_text) if prompt_text else "",
         "prompt_chars": int(len(prompt_text)),
-        "prompt_inject_sha1": _sha1_utf8(prompt_inject_text) if prompt_inject_text else "",
+        "prompt_inject_sha1": _sha1_utf8(prompt_inject_text)
+        if prompt_inject_text
+        else "",
         "prompt_inject_chars": int(len(prompt_inject_text)),
         "guide_sha1": _sha1_utf8(guide_text) if guide_text else "",
         "guide_chars": int(len(guide_text)),
@@ -241,7 +274,9 @@ def _write_run_metadata(
         "llm_sampling_win_size": int(args.win_size),
         "llm_sampling_tau_r": float(args.tau_r),
     }
-    (out_dir / "run.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "run.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _set_seed(seed: int) -> None:
@@ -277,7 +312,9 @@ def main(argv: list[str] | None = None) -> int:
     prompt_text_raw = str(getattr(args, "prompt_text", "") or "")
     # Preserve an intentional empty string, but normalize whitespace-only to empty.
     prompt_text_raw = prompt_text_raw.strip()
-    prompt_strategy = str(getattr(args, "prompt_strategy", "inject") or "inject").strip().lower()
+    prompt_strategy = (
+        str(getattr(args, "prompt_strategy", "inject") or "inject").strip().lower()
+    )
     guide_sep = str(getattr(args, "guide_sep", " ") or " ")
 
     guide_text = ""
@@ -288,7 +325,9 @@ def main(argv: list[str] | None = None) -> int:
         # and rely on the spoken guide_text to drive emotion (user can cut it in post).
         prompt_inject_text = "<|endofprompt|>"
         if not guide_text:
-            print("[infer] WARN: prompt_strategy=guide_prefix but guide_text is empty (nothing will be prepended).")
+            print(
+                "[infer] WARN: prompt_strategy=guide_prefix but guide_text is empty (nothing will be prepended)."
+            )
 
     spk_id = str(args.spk_id).strip()
     if not spk_id:
@@ -320,9 +359,9 @@ def main(argv: list[str] | None = None) -> int:
     # Heavy deps import after parse/validation so `--help` and unit tests stay light.
     ensure_sys_path()
 
-    from cosyvoice.cli.cosyvoice import AutoModel  # noqa: E402
-    import torchaudio  # noqa: E402
     import torch  # noqa: E402
+    import torchaudio  # noqa: E402
+    from cosyvoice.cli.cosyvoice import AutoModel  # noqa: E402
 
     cosyvoice = AutoModel(model_dir=args.model_dir)
     _set_seed(int(args.seed))
@@ -368,7 +407,9 @@ def main(argv: list[str] | None = None) -> int:
                 f" seed={int(args.seed)}"
             )
     except Exception as e:
-        print(f"[infer] WARN: failed to override sampling params (using model default): {e}")
+        print(
+            f"[infer] WARN: failed to override sampling params (using model default): {e}"
+        )
 
     flow_ckpt = str(args.flow_ckpt).strip()
     if flow_ckpt:
@@ -397,7 +438,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[infer] WARN: unexpected_keys={len(unexpected)}")
 
     is_cosyvoice3 = (
-        getattr(getattr(cosyvoice.model, "llm", None), "__class__", type("x", (), {})).__name__ == "CosyVoice3LM"
+        getattr(
+            getattr(cosyvoice.model, "llm", None), "__class__", type("x", (), {})
+        ).__name__
+        == "CosyVoice3LM"
     )
     if is_cosyvoice3:
         # CosyVoice3 requires '<|endofprompt|>' to appear in either the prompt_text or the spoken text.
@@ -405,11 +449,17 @@ def main(argv: list[str] | None = None) -> int:
             if "<|endofprompt|>" not in prompt_inject_text:
                 # Make this robust: auto-append the required token so users don't get a late assertion crash.
                 prompt_inject_text = prompt_inject_text + "<|endofprompt|>"
-                print("[infer] WARN: auto-appended '<|endofprompt|>' to prompt_text (CosyVoice3 requirement).")
+                print(
+                    "[infer] WARN: auto-appended '<|endofprompt|>' to prompt_text (CosyVoice3 requirement)."
+                )
         else:
             if "<|endofprompt|>" not in resolved.text:
-                print("[infer] CosyVoice3 requires '<|endofprompt|>' in text or prompt_text.")
-                print("[infer] Pass --prompt_text '<|endofprompt|>' (default) or include the marker in --text/--text_file.")
+                print(
+                    "[infer] CosyVoice3 requires '<|endofprompt|>' in text or prompt_text."
+                )
+                print(
+                    "[infer] Pass --prompt_text '<|endofprompt|>' (default) or include the marker in --text/--text_file."
+                )
                 return 5
 
     # Write run metadata only after we have validated spk_id/prompt, but without storing any raw text content.
@@ -429,17 +479,23 @@ def main(argv: list[str] | None = None) -> int:
     prompt_token_len = None
     if is_cosyvoice3 and prompt_inject_text:
         prompt_token, prompt_token_len = _extract_prompt_tokens(
-            cosyvoice, prompt_text_raw=prompt_inject_text, text_frontend=bool(args.text_frontend)
+            cosyvoice,
+            prompt_text_raw=prompt_inject_text,
+            text_frontend=bool(args.text_frontend),
         )
 
     # Never auto-split: users decide how to segment long texts.
-    norm = cosyvoice.frontend.text_normalize(resolved.text, split=False, text_frontend=bool(args.text_frontend))
+    norm = cosyvoice.frontend.text_normalize(
+        resolved.text, split=False, text_frontend=bool(args.text_frontend)
+    )
     if isinstance(norm, str):
         seg_norm = norm
     elif isinstance(norm, (list, tuple)):
         # Unexpected, but make it deterministic and still synthesize as one segment.
         seg_norm = "".join(str(x) for x in norm)
-        print("[infer] WARN: text_normalize returned a list/tuple with split=False; coercing to a single segment.")
+        print(
+            "[infer] WARN: text_normalize returned a list/tuple with split=False; coercing to a single segment."
+        )
     else:
         seg_norm = str(norm)
         print(f"[infer] WARN: text_normalize returned {type(norm)}; coercing to str.")
@@ -459,7 +515,9 @@ def main(argv: list[str] | None = None) -> int:
         # In non-stream mode, cosyvoice yields a single full waveform for this segment.
         # In stream mode, it yields multiple non-overlapping waveform pieces which we need to concatenate.
         wav_pieces: list[torch.Tensor] = []
-        for out in cosyvoice.model.tts(**model_input, stream=bool(args.stream), speed=float(args.speed)):
+        for out in cosyvoice.model.tts(
+            **model_input, stream=bool(args.stream), speed=float(args.speed)
+        ):
             wav = out["tts_speech"]
             if not isinstance(wav, torch.Tensor):
                 print(f"[infer] unexpected tts_speech type: {type(wav)}")
@@ -475,7 +533,9 @@ def main(argv: list[str] | None = None) -> int:
             print("[infer] no audio produced")
             return 7
 
-        seg_wav = wav_pieces[0] if len(wav_pieces) == 1 else torch.cat(wav_pieces, dim=1)
+        seg_wav = (
+            wav_pieces[0] if len(wav_pieces) == 1 else torch.cat(wav_pieces, dim=1)
+        )
         out_path = out_wav_path or (out_dir / "chunk_0000.wav")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         torchaudio.save(str(out_path), seg_wav, cosyvoice.sample_rate)

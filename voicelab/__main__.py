@@ -257,6 +257,11 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
             _run_checked(["uv", "python", "pin", "3.10"], cwd=wf_dir, env=None, dry_run=bool(args.dry_run))
             env = os.environ.copy()
             env.setdefault("UV_HTTP_TIMEOUT", "600")
+            # 约束构建隔离环境里的构建依赖（例如 openai-whisper sdist 需要 pkg_resources）。
+            # uv 支持通过 UV_BUILD_CONSTRAINT 指向 constraints 文件来 pin 构建依赖版本。
+            build_constraints = wf_dir / "uv-build-constraints.txt"
+            if build_constraints.exists():
+                env.setdefault("UV_BUILD_CONSTRAINT", str(build_constraints))
             _run_checked(["uv", "sync"], cwd=wf_dir, env=env, dry_run=bool(args.dry_run))
 
     # Assets + runtime init

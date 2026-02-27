@@ -28,3 +28,4 @@ workflows/**/out_wav/
 Thumbs.db
 .vscode/
 .idea/
+.ace-tool/
