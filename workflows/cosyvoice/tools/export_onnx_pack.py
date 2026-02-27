@@ -19,6 +19,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 from dataclasses import dataclass
@@ -53,16 +54,122 @@ def _load_state_dict_maybe(path: Path) -> dict | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Export CosyVoice3 SFT models into an ONNX pack (V1).")
-    p.add_argument("--model_dir", type=str, required=True, help="CosyVoice3 model dir (contains cosyvoice3.yaml/llm.pt/flow.pt/hift.pt).")
-    p.add_argument("--out_dir", type=str, required=True, help="Output directory for the pack.")
-    p.add_argument("--spk_id", type=str, default="", help="Optional: sanity check that spk_id exists in spk2info.pt.")
-    p.add_argument("--llm_ckpt", type=str, default="", help="Optional: hot-load LLM checkpoint state_dict before export.")
-    p.add_argument("--flow_ckpt", type=str, default="", help="Optional: hot-load Flow checkpoint state_dict before export.")
-    p.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"], help="Export device.")
-    p.add_argument("--opset", type=int, default=18, help="ONNX opset version.")
-    p.add_argument("--skip_onnx", action="store_true", help="Only export pack.json/tokenizer/spk2info (no ONNX).")
+    p = argparse.ArgumentParser(
+        description="Export CosyVoice3 SFT models into an ONNX pack (V1)."
+    )
+    p.add_argument(
+        "--model_dir",
+        type=str,
+        required=True,
+        help="CosyVoice3 model dir (contains cosyvoice3.yaml/llm.pt/flow.pt/hift.pt).",
+    )
+    p.add_argument(
+        "--out_dir", type=str, required=True, help="Output directory for the pack."
+    )
+    p.add_argument(
+        "--spk_id",
+        type=str,
+        default="",
+        help="Optional: sanity check that spk_id exists in spk2info.pt.",
+    )
+    p.add_argument(
+        "--llm_ckpt",
+        type=str,
+        default="",
+        help="Optional: hot-load LLM checkpoint state_dict before export.",
+    )
+    p.add_argument(
+        "--flow_ckpt",
+        type=str,
+        default="",
+        help="Optional: hot-load Flow checkpoint state_dict before export.",
+    )
+    p.add_argument(
+        "--device",
+        type=str,
+        default="cpu",
+        choices=["cpu", "cuda"],
+        help="Export device.",
+    )
+    # torch.onnx.export（legacy exporter）最高稳定支持到 opset 17。
+    # opset 18+ 建议走 torch.onnx.dynamo_export（但仍是 preview）。
+    p.add_argument(
+        "--opset",
+        type=int,
+        default=17,
+        help="ONNX opset version (legacy exporter: <=17 recommended).",
+    )
+    p.add_argument(
+        "--skip_onnx",
+        action="store_true",
+        help="Only export pack.json/tokenizer/spk2info (no ONNX).",
+    )
     return p
+
+
+@contextlib.contextmanager
+def _patch_sdpa_for_onnx_export():
+    """
+    修复 torch.onnx.export（legacy exporter）在导出 SDPA（scaled_dot_product_attention）时的兼容性问题。
+
+    现象：Qwen2 在 Transformers 的某些默认路径会调用 F.scaled_dot_product_attention，
+    torch==2.3.x 的 ONNX symbolic 可能会把 Python float scale 当作 Constant(Tensor) 写入，进而崩溃。
+
+    方案：导出期间 monkey-patch 成纯 matmul/softmax 实现，让导出图只包含基础算子，
+    同时更利于 tract-onnx 这类纯 Rust runtime 的支持。
+    """
+
+    import torch
+    import torch.nn.functional as F
+
+    orig = getattr(F, "scaled_dot_product_attention", None)
+    if orig is None:
+        yield
+        return
+
+    def _sdpa_fallback(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
+        dropout_p: float = 0.0,
+        is_causal: bool = False,
+        scale: float | None = None,
+    ) -> torch.Tensor:
+        # 推理/导出场景：不支持 dropout（应为 0）。
+        if dropout_p and float(dropout_p) != 0.0:
+            raise RuntimeError(
+                "[export] SDPA fallback does not support dropout during ONNX export."
+            )
+
+        scores = torch.matmul(query, key.transpose(-2, -1))
+        d = int(query.size(-1))
+        s = float(scale) if scale is not None else (1.0 / (float(d) ** 0.5))
+        scores = scores * s
+
+        if is_causal:
+            q_len = int(scores.size(-2))
+            k_len = int(scores.size(-1))
+            causal = torch.ones(
+                (q_len, k_len), dtype=torch.bool, device=scores.device
+            ).triu(1)
+            scores = scores.masked_fill(causal, float("-inf"))
+
+        if attn_mask is not None:
+            # SDPA 支持 bool mask（False=mask）或 float mask（加性）。
+            if attn_mask.dtype == torch.bool:
+                scores = scores.masked_fill(~attn_mask, float("-inf"))
+            else:
+                scores = scores + attn_mask
+
+        attn = torch.softmax(scores, dim=-1)
+        return torch.matmul(attn, value)
+
+    F.scaled_dot_product_attention = _sdpa_fallback  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        F.scaled_dot_product_attention = orig  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -122,7 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     import torch
     from cosyvoice.cli.cosyvoice import AutoModel
 
-    device = torch.device("cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu"
+    )
     print(f"[export] device={device}")
 
     cosyvoice = AutoModel(model_dir=str(model_dir))
@@ -137,14 +246,22 @@ def main(argv: list[str] | None = None) -> int:
         if callable(list_spks):
             available = list_spks()
             if spk_id not in available:
-                raise SystemExit(f"[export] spk_id not found in spk2info.pt: {spk_id} (available={available})")
+                raise SystemExit(
+                    f"[export] spk_id not found in spk2info.pt: {spk_id} (available={available})"
+                )
 
     # Optional hot-load checkpoints (state_dict) just like infer_sft.py.
-    llm_ckpt = Path(str(args.llm_ckpt)).expanduser().resolve() if str(args.llm_ckpt).strip() else None
+    llm_ckpt = (
+        Path(str(args.llm_ckpt)).expanduser().resolve()
+        if str(args.llm_ckpt).strip()
+        else None
+    )
     if llm_ckpt is not None:
         state = _load_state_dict_maybe(llm_ckpt)
         if state is None:
-            raise SystemExit(f"[export] failed to load llm_ckpt as state_dict: {llm_ckpt}")
+            raise SystemExit(
+                f"[export] failed to load llm_ckpt as state_dict: {llm_ckpt}"
+            )
         missing, unexpected = cosyvoice.model.llm.load_state_dict(state, strict=False)  # type: ignore[attr-defined]
         print(f"[export] hot-loaded llm_ckpt: {llm_ckpt}")
         if missing:
@@ -152,11 +269,17 @@ def main(argv: list[str] | None = None) -> int:
         if unexpected:
             print(f"[export] WARN: llm unexpected_keys={len(unexpected)}")
 
-    flow_ckpt = Path(str(args.flow_ckpt)).expanduser().resolve() if str(args.flow_ckpt).strip() else None
+    flow_ckpt = (
+        Path(str(args.flow_ckpt)).expanduser().resolve()
+        if str(args.flow_ckpt).strip()
+        else None
+    )
     if flow_ckpt is not None:
         state = _load_state_dict_maybe(flow_ckpt)
         if state is None:
-            raise SystemExit(f"[export] failed to load flow_ckpt as state_dict: {flow_ckpt}")
+            raise SystemExit(
+                f"[export] failed to load flow_ckpt as state_dict: {flow_ckpt}"
+            )
         missing, unexpected = cosyvoice.model.flow.load_state_dict(state, strict=False)  # type: ignore[attr-defined]
         print(f"[export] hot-loaded flow_ckpt: {flow_ckpt}")
         if missing:
@@ -216,8 +339,12 @@ def main(argv: list[str] | None = None) -> int:
     any_emb = next(iter(spk2info_json.values()))["embedding"]
     spk_embed_dim = int(len(any_emb))
     spk2info_path = out_dir / "spk2info.json"
-    spk2info_path.write_text(json.dumps(spk2info_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"[export] wrote {spk2info_path} (spkEmbedDim={spk_embed_dim}, spks={len(spk2info_json)})")
+    spk2info_path.write_text(
+        json.dumps(spk2info_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(
+        f"[export] wrote {spk2info_path} (spkEmbedDim={spk_embed_dim}, spks={len(spk2info_json)})"
+    )
 
     # -----------------------------
     # Build pack.json
@@ -230,7 +357,9 @@ def main(argv: list[str] | None = None) -> int:
     token_mel_ratio = int(getattr(flow, "token_mel_ratio", 2))
     sample_rate = int(getattr(cosyvoice, "sample_rate", 24000))
 
-    num_layers = int(getattr(getattr(llm, "llm").model.config, "num_hidden_layers"))  # Qwen2Encoder.model.config
+    num_layers = int(
+        getattr(getattr(llm, "llm").model.config, "num_hidden_layers")
+    )  # Qwen2Encoder.model.config
     io_names = _make_llm_io_names(num_layers)
 
     pack_json = {
@@ -246,8 +375,14 @@ def main(argv: list[str] | None = None) -> int:
         "llm": {
             "minTokenTextRatio": 2.0,
             "maxTokenTextRatio": 20.0,
-            "prefillIo": {"inputs": io_names.prefill_inputs, "outputs": io_names.prefill_outputs},
-            "decodeIo": {"inputs": io_names.decode_inputs, "outputs": io_names.decode_outputs},
+            "prefillIo": {
+                "inputs": io_names.prefill_inputs,
+                "outputs": io_names.prefill_outputs,
+            },
+            "decodeIo": {
+                "inputs": io_names.decode_inputs,
+                "outputs": io_names.decode_outputs,
+            },
         },
         "flowIo": {"inputs": ["speech_tokens", "spk_embedding"], "outputs": ["mel"]},
         "hiftIo": {"inputs": ["mel"], "outputs": ["wav"]},
@@ -260,7 +395,9 @@ def main(argv: list[str] | None = None) -> int:
             "hiftInferOnnx": "hift_infer.onnx",
         },
     }
-    (out_dir / "pack.json").write_text(json.dumps(pack_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "pack.json").write_text(
+        json.dumps(pack_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     print(f"[export] wrote {out_dir / 'pack.json'}")
 
     if args.skip_onnx:
@@ -269,7 +406,9 @@ def main(argv: list[str] | None = None) -> int:
             "tokenizer.json": _sha256_file(tok_json),
             "spk2info.json": _sha256_file(spk2info_path),
         }
-        (out_dir / "sha256.json").write_text(json.dumps(sha, indent=2) + "\n", encoding="utf-8")
+        (out_dir / "sha256.json").write_text(
+            json.dumps(sha, indent=2) + "\n", encoding="utf-8"
+        )
         print("[export] --skip_onnx set; done.")
         return 0
 
@@ -290,14 +429,24 @@ def main(argv: list[str] | None = None) -> int:
         def forward(self, input_ids):
             # input_ids: [1, T] int64
             text_emb = self._embed(input_ids)
-            sos_emb = self._speech_emb.weight[self._sos].reshape(1, 1, -1).to(text_emb.dtype)
-            task_emb = self._speech_emb.weight[self._task].reshape(1, 1, -1).to(text_emb.dtype)
+            sos_emb = (
+                self._speech_emb.weight[self._sos].reshape(1, 1, -1).to(text_emb.dtype)
+            )
+            task_emb = (
+                self._speech_emb.weight[self._task].reshape(1, 1, -1).to(text_emb.dtype)
+            )
             x = torch.cat([sos_emb, text_emb, task_emb], dim=1)
             attn = torch.ones((1, x.size(1)), dtype=torch.bool, device=x.device)
-            out = self._qwen(inputs_embeds=x, attention_mask=attn, use_cache=True, return_dict=True)
+            out = self._qwen(
+                inputs_embeds=x, attention_mask=attn, use_cache=True, return_dict=True
+            )
             h = out.last_hidden_state[:, -1:, :]
             logits = self._decoder(h).squeeze(1)  # [1, V]
-            return (logits, *(_unpack_past(out.past_key_values)))
+            past = out.past_key_values
+            # Transformers>=4.48 引入 Cache 对象；为保持导出 IO 仍是传统 (k,v) tuple，这里转回 legacy cache。
+            if hasattr(past, "to_legacy_cache"):
+                past = past.to_legacy_cache()
+            return (logits, *(_unpack_past(past)))
 
     class _LlmDecode(torch.nn.Module):
         def __init__(self, llm_mod: Any, num_layers: int):
@@ -311,20 +460,34 @@ def main(argv: list[str] | None = None) -> int:
             # token_id: [1, 1] int64 (speech token id)
             cache = _pack_past(past_flat)
             if len(cache) != self._num_layers:
-                raise RuntimeError(f"bad cache len={len(cache)} expected={self._num_layers}")
+                raise RuntimeError(
+                    f"bad cache len={len(cache)} expected={self._num_layers}"
+                )
             x = self._speech_emb(token_id)
             t = _past_len(cache[0][0]) + 1
             attn = torch.ones((1, t), dtype=torch.bool, device=x.device)
+
+            # Transformers>=4.48: past_key_values 需要 Cache 对象；这里从 legacy cache 构建 DynamicCache。
+            cache_obj: Any = cache
+            try:
+                from transformers.cache_utils import DynamicCache  # type: ignore
+
+                cache_obj = DynamicCache.from_legacy_cache(cache)
+            except Exception:
+                cache_obj = cache
             out = self._qwen(
                 inputs_embeds=x,
                 attention_mask=attn,
                 use_cache=True,
-                past_key_values=cache,
+                past_key_values=cache_obj,
                 return_dict=True,
             )
             h = out.last_hidden_state  # [1, 1, H]
             logits = self._decoder(h).squeeze(1)  # [1, V]
-            return (logits, *(_unpack_past(out.past_key_values)))
+            past = out.past_key_values
+            if hasattr(past, "to_legacy_cache"):
+                past = past.to_legacy_cache()
+            return (logits, *(_unpack_past(past)))
 
     class _FlowInfer(torch.nn.Module):
         def __init__(self, flow_mod: Any):
@@ -334,10 +497,14 @@ def main(argv: list[str] | None = None) -> int:
         def forward(self, speech_tokens, spk_embedding):
             # speech_tokens: [1, T] int64 -> int32
             token = speech_tokens.to(dtype=torch.int32)
-            token_len = torch.tensor([token.size(1)], dtype=torch.int32, device=token.device)
+            token_len = torch.tensor(
+                [token.size(1)], dtype=torch.int32, device=token.device
+            )
             prompt_token = torch.zeros((1, 0), dtype=torch.int32, device=token.device)
             prompt_token_len = torch.tensor([0], dtype=torch.int32, device=token.device)
-            prompt_feat = torch.zeros((1, 0, 80), dtype=torch.float32, device=token.device)
+            prompt_feat = torch.zeros(
+                (1, 0, 80), dtype=torch.float32, device=token.device
+            )
             prompt_feat_len = torch.tensor([0], dtype=torch.int32, device=token.device)
             mel, _ = self._flow.inference(
                 token=token,
@@ -358,7 +525,9 @@ def main(argv: list[str] | None = None) -> int:
             self._hift = hift_mod
 
         def forward(self, mel):
-            wav, _ = self._hift.inference(speech_feat=mel.to(dtype=torch.float32), finalize=True)
+            wav, _ = self._hift.inference(
+                speech_feat=mel.to(dtype=torch.float32), finalize=True
+            )
             return wav
 
     # Put model modules on device + eval + float32 for export stability.
@@ -380,48 +549,58 @@ def main(argv: list[str] | None = None) -> int:
     hift_path = out_dir / "hift_infer.onnx"
 
     opset = int(args.opset)
+    if opset > 17:
+        print(
+            f"[export] WARN: torch.onnx.export legacy exporter may not support opset {opset}; clamping to 17."
+        )
+        opset = 17
     print(f"[export] exporting ONNX (opset={opset}) ...")
 
-    # LLM prefill
-    dummy_ids = torch.tensor([[eop_id]], dtype=torch.int64, device=device)  # minimal, still includes eop marker
-    torch.onnx.export(
-        llm_prefill,
-        (dummy_ids,),
-        str(llm_prefill_path),
-        export_params=True,
-        opset_version=opset,
-        do_constant_folding=True,
-        input_names=io_names.prefill_inputs,
-        output_names=io_names.prefill_outputs,
-        dynamic_axes={
-            "input_ids": {1: "text_len"},
-            **{name: {2: "past_len"} for name in io_names.prefill_outputs[1:]},
-        },
-    )
-    print(f"[export] wrote {llm_prefill_path}")
+    with _patch_sdpa_for_onnx_export():
+        # LLM prefill
+        dummy_ids = torch.tensor(
+            [[eop_id]], dtype=torch.int64, device=device
+        )  # minimal, still includes eop marker
+        torch.onnx.export(
+            llm_prefill,
+            (dummy_ids,),
+            str(llm_prefill_path),
+            export_params=True,
+            opset_version=opset,
+            do_constant_folding=True,
+            input_names=io_names.prefill_inputs,
+            output_names=io_names.prefill_outputs,
+            dynamic_axes={
+                "input_ids": {1: "text_len"},
+                **{name: {2: "past_len"} for name in io_names.prefill_outputs[1:]},
+            },
+        )
+        print(f"[export] wrote {llm_prefill_path}")
 
-    # LLM decode
-    with torch.no_grad():
-        pre_out = llm_prefill(dummy_ids)
-    # pre_out = (logits, *past_flat)
-    past_flat = tuple(pre_out[1:])
-    dummy_tok = torch.zeros((1, 1), dtype=torch.int64, device=device)
-    torch.onnx.export(
-        llm_decode,
-        (dummy_tok, *past_flat),
-        str(llm_decode_path),
-        export_params=True,
-        opset_version=opset,
-        do_constant_folding=True,
-        input_names=io_names.decode_inputs,
-        output_names=io_names.decode_outputs,
-        dynamic_axes={
-            "token_id": {1: "one"},
-            **{name: {2: "past_len"} for name in io_names.decode_inputs[1:]},
-            **{name: {2: "past_len_plus_1"} for name in io_names.decode_outputs[1:]},
-        },
-    )
-    print(f"[export] wrote {llm_decode_path}")
+        # LLM decode
+        with torch.no_grad():
+            pre_out = llm_prefill(dummy_ids)
+        # pre_out = (logits, *past_flat)
+        past_flat = tuple(pre_out[1:])
+        dummy_tok = torch.zeros((1, 1), dtype=torch.int64, device=device)
+        torch.onnx.export(
+            llm_decode,
+            (dummy_tok, *past_flat),
+            str(llm_decode_path),
+            export_params=True,
+            opset_version=opset,
+            do_constant_folding=True,
+            input_names=io_names.decode_inputs,
+            output_names=io_names.decode_outputs,
+            dynamic_axes={
+                "token_id": {1: "one"},
+                **{name: {2: "past_len"} for name in io_names.decode_inputs[1:]},
+                **{
+                    name: {2: "past_len_plus_1"} for name in io_names.decode_outputs[1:]
+                },
+            },
+        )
+        print(f"[export] wrote {llm_decode_path}")
 
     # Flow
     dummy_speech = torch.zeros((1, 10), dtype=torch.int64, device=device)
@@ -463,7 +642,9 @@ def main(argv: list[str] | None = None) -> int:
         "flow_infer.onnx": _sha256_file(flow_path),
         "hift_infer.onnx": _sha256_file(hift_path),
     }
-    (out_dir / "sha256.json").write_text(json.dumps(sha, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "sha256.json").write_text(
+        json.dumps(sha, indent=2) + "\n", encoding="utf-8"
+    )
     print(f"[export] wrote {out_dir / 'sha256.json'}")
     print("[export] done.")
     return 0
