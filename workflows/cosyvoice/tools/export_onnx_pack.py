@@ -716,8 +716,14 @@ def main(argv: list[str] | None = None) -> int:
                     f"bad cache len={len(cache)} expected={self._num_layers}"
                 )
             x = self._speech_emb(token_id)
-            t = _past_len(cache[0][0]) + 1
-            attn = torch.ones((1, t), dtype=torch.bool, device=x.device)
+            # 注意：不能用 `_past_len(...)` 来构造固定长度的 attention_mask。
+            # 否则 ONNX tracing 会把 dummy past_len 固化成常量（例如 past_len=3 -> t=4），
+            # 运行时遇到真实 past_len（例如 70）就会触发 4 by 70 之类的广播错误。
+            # 这里从 KV cache 的 shape 动态派生 mask 长度：[B, past_len] + [B, 1] => [B, past_len+1]
+            k0 = cache[0][0]  # [B, H, past_len, D]
+            past_mask = torch.ones_like(k0[:, 0, :, 0], dtype=torch.bool)  # [B, past_len]
+            cur_mask = torch.ones_like(token_id, dtype=torch.bool)  # [B, 1]
+            attn = torch.cat([past_mask, cur_mask], dim=1)  # [B, past_len+1]
 
             # Transformers>=4.48: past_key_values 需要 Cache 对象；这里从 legacy cache 构建 DynamicCache。
             cache_obj: Any = cache

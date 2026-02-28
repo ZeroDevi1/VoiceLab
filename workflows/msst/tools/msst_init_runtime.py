@@ -9,7 +9,14 @@ from voicelab_bootstrap import assets_src_root, msst_vendor_root, runtime_root
 
 
 def _rm_rf(path: Path) -> None:
-    if not path.exists() and not path.is_symlink():
+    # Windows 下如果符号链接类型创建错了（例如：把目录当成“文件链接”创建），
+    # Path.exists()/stat() 可能会抛 PermissionError；这里要保证 --force 时仍可清理。
+    try:
+        exists = path.exists()
+    except OSError:
+        exists = False
+
+    if not exists and not path.is_symlink():
         return
     if path.is_symlink() or path.is_file():
         path.unlink(missing_ok=True)
@@ -24,10 +31,17 @@ def _ensure_dir(path: Path) -> None:
 def _symlink(src: Path, dst: Path, *, force: bool) -> None:
     if force:
         _rm_rf(dst)
-    if dst.exists() or dst.is_symlink():
+    try:
+        dst_exists = dst.exists()
+    except OSError:
+        dst_exists = False
+
+    if dst_exists or dst.is_symlink():
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(str(src), str(dst))
+    # Windows 上创建符号链接时必须显式告诉它目标是否为目录；
+    # 否则会创建成“文件符号链接”，Python 会无法按目录遍历（Path.exists/stat 可能报错）。
+    os.symlink(str(src), str(dst), target_is_directory=src.is_dir())
 
 
 def _copytree(src: Path, dst: Path, *, force: bool) -> None:
@@ -74,7 +88,9 @@ def _link_or_copy_model(src: Path, dst: Path, *, force: bool) -> None:
         shutil.copy2(src, dst)
 
 
-def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool, hf_base: str) -> Path:
+def init_runtime(
+    *, force: bool, assets_src: Path | None, download_missing: bool, hf_base: str
+) -> Path:
     vendor = msst_vendor_root()
     if not vendor.exists():
         raise SystemExit(
@@ -101,14 +117,28 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     # 3) Copy data/model metadata (for download + sha validation).
     # Upstream may keep these under data_backup/ and generate data/ at runtime.
     if (vendor / "data_backup" / "models_info.json").exists():
-        _copyfile(vendor / "data_backup" / "models_info.json", rt / "data" / "models_info.json", force=force)
+        _copyfile(
+            vendor / "data_backup" / "models_info.json",
+            rt / "data" / "models_info.json",
+            force=force,
+        )
     else:
-        _copyfile(vendor / "data" / "models_info.json", rt / "data" / "models_info.json", force=force)
+        _copyfile(
+            vendor / "data" / "models_info.json",
+            rt / "data" / "models_info.json",
+            force=force,
+        )
 
     # 4) Install becruily karaoke config under runtime/configs/vocal_models/.
     # Keep it in runtime so inference always uses a stable config even if vendor changes.
-    local_cfg = Path(__file__).resolve().parents[1] / "configs" / "config_karaoke_becruily.yaml"
-    _copyfile(local_cfg, rt / "configs" / "vocal_models" / "config_karaoke_becruily.yaml", force=force)
+    local_cfg = (
+        Path(__file__).resolve().parents[1] / "configs" / "config_karaoke_becruily.yaml"
+    )
+    _copyfile(
+        local_cfg,
+        rt / "configs" / "vocal_models" / "config_karaoke_becruily.yaml",
+        force=force,
+    )
 
     # 5) Prepare runtime model dirs.
     _ensure_dir(rt / "pretrain" / "vocal_models")
@@ -118,9 +148,18 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     required = [
         rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
         rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
-        rt / "pretrain" / "vocal_models" / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
-        rt / "pretrain" / "single_stem_models" / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
-        rt / "pretrain" / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+        rt
+        / "pretrain"
+        / "vocal_models"
+        / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+        rt
+        / "pretrain"
+        / "single_stem_models"
+        / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+        rt
+        / "pretrain"
+        / "single_stem_models"
+        / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
     ]
     if not force and all(p.exists() for p in required):
         return rt
@@ -134,25 +173,40 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
         )
 
     models = [
-        (src_assets / "vocal_models" / "inst_v1e.ckpt", rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt"),
-        (src_assets / "vocal_models" / "big_beta5e.ckpt", rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt"),
         (
-            src_assets / "vocal_models" / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+            src_assets / "vocal_models" / "inst_v1e.ckpt",
+            rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
+        ),
+        (
+            src_assets / "vocal_models" / "big_beta5e.ckpt",
+            rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
+        ),
+        (
+            src_assets
+            / "vocal_models"
+            / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
             rt
             / "pretrain"
             / "vocal_models"
             / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
         ),
         (
-            src_assets / "single_stem_models" / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+            src_assets
+            / "single_stem_models"
+            / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
             rt
             / "pretrain"
             / "single_stem_models"
             / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
         ),
         (
-            src_assets / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-            rt / "pretrain" / "single_stem_models" / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+            src_assets
+            / "single_stem_models"
+            / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+            rt
+            / "pretrain"
+            / "single_stem_models"
+            / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
         ),
     ]
 
@@ -165,9 +219,14 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     if missing and download_missing:
         from msst_download_models import build_model_specs, download_models
 
-        print(f"[msst] Missing {len(missing)} model(s); downloading into {src_assets} ...", flush=True)
+        print(
+            f"[msst] Missing {len(missing)} model(s); downloading into {src_assets} ...",
+            flush=True,
+        )
         specs = build_model_specs(hf_base=hf_base)
-        download_models(specs=specs, force=False, dest_root=src_assets, dest_layout="pretrain")
+        download_models(
+            specs=specs, force=False, dest_root=src_assets, dest_layout="pretrain"
+        )
 
         # Re-link after download.
         for src, dst in models:
@@ -187,15 +246,23 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Initialize workflows/msst/runtime without modifying vendor.")
-    ap.add_argument("--force", action="store_true", help="Recreate runtime links/copies.")
+    ap = argparse.ArgumentParser(
+        description="Initialize workflows/msst/runtime without modifying vendor."
+    )
+    ap.add_argument(
+        "--force", action="store_true", help="Recreate runtime links/copies."
+    )
     ap.add_argument(
         "--assets-src",
         type=Path,
         default=None,
         help="Path to an existing MSST pretrain directory (default: /mnt/c/AIGC/MSST-WebUI/pretrain).",
     )
-    ap.add_argument("--no-download-missing", action="store_true", help="Disable downloading missing models.")
+    ap.add_argument(
+        "--no-download-missing",
+        action="store_true",
+        help="Disable downloading missing models.",
+    )
     ap.add_argument(
         "--hf-base",
         default="https://hf-mirror.com",
@@ -212,7 +279,9 @@ def main() -> int:
     print(f"[msst] runtime ready: {rt}")
     print("")
     print("[msst] Next steps:")
-    print("  - Process: uv run python tools/msst_process_chain.py --input /path/to/song.wav")
+    print(
+        "  - Process: uv run python tools/msst_process_chain.py --input /path/to/song.wav"
+    )
     return 0
 
 
