@@ -394,7 +394,11 @@ def main() -> int:
         default=",".join(["cosyvoice", "rvc", "msst"]),
         help="Comma-separated list: cosyvoice,rvc,msst",
     )
-    p_bootstrap.add_argument("--assets-dir", default=None, help="Assets cache dir (default: ~/.cache/voicelab/assets).")
+    p_bootstrap.add_argument(
+        "--assets-dir",
+        default=None,
+        help="Assets cache dir (default: <repo>/.cache/voicelab/assets).",
+    )
     p_bootstrap.add_argument("--git-mirror-prefix", default=None, help="GitHub mirror prefix for vendor clone/pull.")
     p_bootstrap.add_argument("--hf-base", default=None, help="HuggingFace base URL (default for cn: https://hf-mirror.com).")
     p_bootstrap.add_argument("--dry-run", action="store_true", help="Print steps without executing.")

@@ -24,7 +24,7 @@ def test_dest_layout_runtime_keeps_pretrain_prefix() -> None:
         rel_dest=Path("pretrain/vocal_models/inst_v1e.ckpt"),
         layout="runtime",
     )
-    assert str(dest) == "/x/pretrain/vocal_models/inst_v1e.ckpt"
+    assert dest == Path("/x/pretrain/vocal_models/inst_v1e.ckpt")
 
 
 def test_dest_layout_pretrain_strips_pretrain_prefix() -> None:
@@ -36,4 +36,4 @@ def test_dest_layout_pretrain_strips_pretrain_prefix() -> None:
         rel_dest=Path("pretrain/vocal_models/inst_v1e.ckpt"),
         layout="pretrain",
     )
-    assert str(dest) == "/x/pretrain/vocal_models/inst_v1e.ckpt"
+    assert dest == Path("/x/pretrain/vocal_models/inst_v1e.ckpt")

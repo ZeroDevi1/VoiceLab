@@ -51,10 +51,10 @@ cd "$VOICELAB_DIR"
 uv run -m voicelab bootstrap
 ```
 
-### 全局共享缓存说明（训练/推理代码无需修改）
+### 项目内共享缓存说明（训练/推理代码无需修改）
 
-`bootstrap` 默认会把大模型/资产下载到全局共享缓存：
-- `~/.cache/voicelab/assets`
+`bootstrap` 默认会把大模型/资产下载到当前仓库内的共享缓存：
+- `.cache/voicelab/assets`
 
 并通过各 workflow 的 `*_init_runtime.py` 把这些文件 **软链到 `workflows/*/runtime/`**（RVC/MSST），或在 workflow 内创建固定相对路径的软链（CosyVoice 的 `workflows/cosyvoice/pretrained_models`）。
 

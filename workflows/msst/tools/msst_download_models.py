@@ -179,7 +179,7 @@ def main() -> int:
         default=str(runtime_root()),
         help=(
             "Destination root dir. Default is workflows/msst/runtime. "
-            "Use a shared cache (e.g. ~/.cache/voicelab/assets/msst/pretrain) with --dest-layout pretrain."
+            "Use a project-local cache (e.g. .cache/voicelab/assets/msst/pretrain) with --dest-layout pretrain."
         ),
     )
     ap.add_argument(

@@ -35,17 +35,23 @@ def runtime_root() -> Path:
     return workflow_root() / "runtime"
 
 
+def voicelab_assets_root() -> Path:
+    env = os.environ.get("VOICELAB_ASSETS_DIR")
+    base = (env or str(voicelab_root() / ".cache" / "voicelab" / "assets")).strip()
+    return Path(base).expanduser().resolve()
+
+
 def assets_src_root() -> Path:
     """
-    Where to copy large MSST models (ckpt/th) from.
+    Where to reuse/download large MSST models (ckpt/th).
 
-    Default matches the user's existing Windows-side install visible in WSL:
-      /mnt/c/AIGC/MSST-WebUI/pretrain
+    Default uses the VoiceLab project-local cache:
+      <repo>/.cache/voicelab/assets/msst/pretrain
     """
     env = os.environ.get("MSST_ASSETS_SRC_DIR")
     if env:
         return Path(env).expanduser().resolve()
-    return Path("/mnt/c/AIGC/MSST-WebUI/pretrain").resolve()
+    return (voicelab_assets_root() / "msst" / "pretrain").resolve()
 
 
 def ensure_runtime_pythonpath() -> dict[str, Path]:

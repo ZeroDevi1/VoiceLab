@@ -37,7 +37,7 @@ uv python pin 3.10
 uv sync
 ```
 
-3) 初始化 runtime（不污染 vendor；会在 `workflows/msst/runtime/` 建立运行目录，并从 `/mnt/c/AIGC/MSST-WebUI/pretrain` 拷贝需要的模型）：
+3) 初始化 runtime（不污染 vendor；会在 `workflows/msst/runtime/` 建立运行目录。默认会把模型下载到 VoiceLab 共享缓存，再链接/复制到 runtime）：
 
 ```bash
 uv run python tools/msst_init_runtime.py
@@ -129,18 +129,24 @@ runtime 目录结构（核心）：
 - `workflows/msst/runtime/configs`：从 `vendor/MSST-WebUI/configs_backup` 复制（“干净默认值”）
 - `workflows/msst/runtime/pretrain/**`：模型文件（大文件）
 
-模型拷贝的默认来源：
+模型来源默认规则：
 
-- `/mnt/c/AIGC/MSST-WebUI/pretrain`（可通过 `--assets-src` 或环境变量 `MSST_ASSETS_SRC_DIR` 覆盖）
+- 默认下载/复用目录：`<仓库根目录>/.cache/voicelab/assets/msst/pretrain`
+- 可通过环境变量 `VOICELAB_ASSETS_DIR` 改成别的共享缓存根目录
+- 如果你本机已经有现成的 MSST 模型目录，也可以通过 `--assets-src` 或环境变量 `MSST_ASSETS_SRC_DIR` 直接复用，例如 `D:\AIGC\MSST-WebUI\pretrain` / `/mnt/d/AIGC/MSST-WebUI/pretrain`
 
 你也可以通过环境变量覆盖路径：
 
 - `MSST_VENDOR_DIR`：上游 MSST-WebUI repo 路径（默认 `vendor/MSST-WebUI`）
 - `MSST_RUNTIME_DIR`：runtime 路径（默认 `workflows/msst/runtime`）
-- `MSST_ASSETS_SRC_DIR`：本地模型来源路径（默认 `/mnt/c/AIGC/MSST-WebUI/pretrain`）
+- `VOICELAB_ASSETS_DIR`：VoiceLab 共享资产根目录（默认 `<仓库根目录>/.cache/voicelab/assets`）
+- `MSST_ASSETS_SRC_DIR`：显式指定一个已有的 MSST `pretrain` 目录；设置后优先于默认缓存路径
 
 ## 说明
 
 - 需要系统已安装 `ffmpeg`（用于输入预转换）。
-- 如果新环境没有 `/mnt/c/AIGC/MSST-WebUI/pretrain`，可用：
-  - `uv run python tools/msst_download_models.py`（默认走 `https://hf-mirror.com`，可用 `--hf-base` 覆盖）
+- 新用户直接执行 `uv run python tools/msst_init_runtime.py` 即可；缺失模型会自动下载到默认缓存（默认走 `https://hf-mirror.com`，可用 `--hf-base` 覆盖）。
+- 如果你想单独预下载模型，也可执行：
+  - `uv run python tools/msst_download_models.py --dest-root .cache/voicelab/assets/msst/pretrain --dest-layout pretrain`
+- 如果你已经有外部 MSST 整合包，只想复用它的模型目录，可执行：
+  - `uv run python tools/msst_init_runtime.py --assets-src /mnt/d/AIGC/MSST-WebUI/pretrain`

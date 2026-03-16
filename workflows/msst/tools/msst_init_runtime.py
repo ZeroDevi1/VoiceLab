@@ -88,6 +88,65 @@ def _link_or_copy_model(src: Path, dst: Path, *, force: bool) -> None:
         shutil.copy2(src, dst)
 
 
+def _required_model_paths(rt: Path) -> list[Path]:
+    return [
+        rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
+        rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
+        rt
+        / "pretrain"
+        / "vocal_models"
+        / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+        rt
+        / "pretrain"
+        / "single_stem_models"
+        / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+        rt
+        / "pretrain"
+        / "single_stem_models"
+        / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+    ]
+
+
+def _model_mappings(src_assets: Path, rt: Path) -> list[tuple[Path, Path]]:
+    return [
+        (
+            src_assets / "vocal_models" / "inst_v1e.ckpt",
+            rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
+        ),
+        (
+            src_assets / "vocal_models" / "big_beta5e.ckpt",
+            rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
+        ),
+        (
+            src_assets
+            / "vocal_models"
+            / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+            rt
+            / "pretrain"
+            / "vocal_models"
+            / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+        ),
+        (
+            src_assets
+            / "single_stem_models"
+            / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+            rt
+            / "pretrain"
+            / "single_stem_models"
+            / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+        ),
+        (
+            src_assets
+            / "single_stem_models"
+            / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+            rt
+            / "pretrain"
+            / "single_stem_models"
+            / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+        ),
+    ]
+
+
 def init_runtime(
     *, force: bool, assets_src: Path | None, download_missing: bool, hf_base: str
 ) -> Path:
@@ -145,70 +204,22 @@ def init_runtime(
     _ensure_dir(rt / "pretrain" / "single_stem_models")
 
     # If runtime already has all required model files, do not require an assets_src.
-    required = [
-        rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
-        rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
-        rt
-        / "pretrain"
-        / "vocal_models"
-        / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
-        rt
-        / "pretrain"
-        / "single_stem_models"
-        / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
-        rt
-        / "pretrain"
-        / "single_stem_models"
-        / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-    ]
+    required = _required_model_paths(rt)
     if not force and all(p.exists() for p in required):
         return rt
 
-    # 6) Copy models from the user's existing MSST install (WSL-visible Windows path by default).
+    # 6) Reuse/download models from the configured assets directory.
     src_assets = assets_src or assets_src_root()
     if not src_assets.exists():
-        raise SystemExit(
-            f"Assets source dir not found: {src_assets}\n"
-            "Set MSST_ASSETS_SRC_DIR or pass --assets-src."
-        )
+        if not download_missing:
+            raise SystemExit(
+                f"Assets source dir not found: {src_assets}\n"
+                "Pass --assets-src to an existing MSST pretrain dir, set MSST_ASSETS_SRC_DIR,\n"
+                "or rerun without --no-download-missing to download into the default VoiceLab cache."
+            )
+        _ensure_dir(src_assets)
 
-    models = [
-        (
-            src_assets / "vocal_models" / "inst_v1e.ckpt",
-            rt / "pretrain" / "vocal_models" / "inst_v1e.ckpt",
-        ),
-        (
-            src_assets / "vocal_models" / "big_beta5e.ckpt",
-            rt / "pretrain" / "vocal_models" / "big_beta5e.ckpt",
-        ),
-        (
-            src_assets
-            / "vocal_models"
-            / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
-            rt
-            / "pretrain"
-            / "vocal_models"
-            / "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
-        ),
-        (
-            src_assets
-            / "single_stem_models"
-            / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
-            rt
-            / "pretrain"
-            / "single_stem_models"
-            / "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
-        ),
-        (
-            src_assets
-            / "single_stem_models"
-            / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-            rt
-            / "pretrain"
-            / "single_stem_models"
-            / "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
-        ),
-    ]
+    models = _model_mappings(src_assets, rt)
 
     for src, dst in models:
         if src.exists():
@@ -239,7 +250,9 @@ def init_runtime(
         raise SystemExit(
             "[msst] Missing required model files:\n"
             + "\n".join(f"  - {p}" for p in missing_required)
-            + "\nRun: uv run python tools/msst_download_models.py"
+            + "\nPass --assets-src to an existing MSST pretrain dir,"
+            + "\nset MSST_ASSETS_SRC_DIR,"
+            + "\nor run: uv run python tools/msst_download_models.py"
         )
 
     return rt
@@ -256,12 +269,16 @@ def main() -> int:
         "--assets-src",
         type=Path,
         default=None,
-        help="Path to an existing MSST pretrain directory (default: /mnt/c/AIGC/MSST-WebUI/pretrain).",
+        help=(
+            "Path to an existing MSST pretrain directory. "
+            "If omitted, VoiceLab uses VOICELAB_ASSETS_DIR/msst/pretrain "
+            "(default: <repo>/.cache/voicelab/assets/msst/pretrain)."
+        ),
     )
     ap.add_argument(
         "--no-download-missing",
         action="store_true",
-        help="Disable downloading missing models.",
+        help="Disable downloading missing models into the configured assets cache.",
     )
     ap.add_argument(
         "--hf-base",

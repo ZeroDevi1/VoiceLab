@@ -11,6 +11,10 @@ DEFAULT_WORKFLOWS: list[str] = ["cosyvoice", "rvc", "msst"]
 KNOWN_WORKFLOWS: set[str] = set(DEFAULT_WORKFLOWS)
 
 
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
 def parse_workflows(value: str) -> list[str]:
     """
     Parse a comma-separated workflow list.
@@ -42,7 +46,11 @@ def parse_workflows(value: str) -> list[str]:
 
 def resolve_assets_dir(arg: str | None) -> Path:
     env = os.environ.get("VOICELAB_ASSETS_DIR")
-    base = (arg or env or "~/.cache/voicelab/assets").strip()
+    base = (
+        arg
+        or env
+        or str(repo_root() / ".cache" / "voicelab" / "assets")
+    ).strip()
     return Path(base).expanduser().resolve()
 
 
