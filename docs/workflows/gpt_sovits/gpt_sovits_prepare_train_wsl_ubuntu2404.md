@@ -8,7 +8,15 @@
 
 - 已同步 vendor：`vendor/GPT-SoVITS`
   - `uv run -m voicelab vendor sync`
-- 已安装 GPT-SoVITS 依赖（建议在 `workflows/gpt_sovits/` 创建自己的环境后安装）：
+- 推荐先执行统一初始化（会准备 workflow 环境与常用 pretrained 共享缓存）：
+
+```bash
+cd "$VOICELAB_DIR"
+uv run -m voicelab bootstrap --workflows gpt_sovits
+uv run -m voicelab doctor
+```
+
+- 如需手动检查 GPT-SoVITS 依赖，可参考上游 `requirements.txt`：
 
 ```bash
 cd "$VOICELAB_DIR/workflows/gpt_sovits"

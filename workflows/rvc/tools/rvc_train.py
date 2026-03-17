@@ -13,7 +13,12 @@ from random import shuffle
 from rvc_init_runtime import init_runtime
 from rvc_stage_dataset import stage_dataset
 from voicelab_bootstrap import voicelab_root
-from voicelab.list_annotations import AUDIO_EXTS, find_same_name_list, parse_list, resolve_audio_for_dataset
+from voicelab.list_annotations import (
+    AUDIO_EXTS,
+    find_same_name_list,
+    parse_list,
+    resolve_audio_for_dataset,
+)
 
 
 def _run(
@@ -40,7 +45,9 @@ def _write_config_json(rt: Path, exp_name: str, *, version: str, sr_tag: str) ->
 
     cfg_src = rt / "configs" / version / f"{sr_tag}.json"
     if not cfg_src.exists():
-        raise SystemExit(f"Missing config template: {cfg_src} (did you run tools/rvc_init_runtime.py?)")
+        raise SystemExit(
+            f"Missing config template: {cfg_src} (did you run tools/rvc_init_runtime.py?)"
+        )
 
     cfg_dst = exp / "config.json"
     if cfg_dst.exists():
@@ -48,7 +55,10 @@ def _write_config_json(rt: Path, exp_name: str, *, version: str, sr_tag: str) ->
 
     # Normalize via JSON load/dump to avoid accidental BOM/encoding issues.
     data = json.loads(cfg_src.read_text(encoding="utf-8"))
-    cfg_dst.write_text(json.dumps(data, ensure_ascii=False, indent=4, sort_keys=True) + "\n", encoding="utf-8")
+    cfg_dst.write_text(
+        json.dumps(data, ensure_ascii=False, indent=4, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _write_filelist(
@@ -74,10 +84,17 @@ def _write_filelist(
 
     # In upstream, f0 npy names are like "xxx.wav.npy" (stem "xxx.wav").
     gt = {x.stem for x in gt_wavs_dir.glob("*.wav")}
-    fea = {x.name.replace(".npy", "").replace(".wav", "") for x in fea_dir.glob("*.npy")}
+    fea = {
+        x.name.replace(".npy", "").replace(".wav", "") for x in fea_dir.glob("*.npy")
+    }
     if if_f0:
-        f0 = {x.name.replace(".npy", "").replace(".wav", "") for x in f0_dir.glob("*.npy")}
-        f0nsf = {x.name.replace(".npy", "").replace(".wav", "") for x in f0nsf_dir.glob("*.npy")}
+        f0 = {
+            x.name.replace(".npy", "").replace(".wav", "") for x in f0_dir.glob("*.npy")
+        }
+        f0nsf = {
+            x.name.replace(".npy", "").replace(".wav", "")
+            for x in f0nsf_dir.glob("*.npy")
+        }
         names = gt & fea & f0 & f0nsf
     else:
         names = gt & fea
@@ -88,7 +105,9 @@ def _write_filelist(
     lines: list[str] = []
     exp_abs = exp.resolve()
     gt_abs = (exp_abs / "0_gt_wavs").as_posix()
-    fea_abs = (exp_abs / ("3_feature256" if version == "v1" else "3_feature768")).as_posix()
+    fea_abs = (
+        exp_abs / ("3_feature256" if version == "v1" else "3_feature768")
+    ).as_posix()
     if if_f0:
         f0_abs = (exp_abs / "2a_f0").as_posix()
         f0nsf_abs = (exp_abs / "2b-f0nsf").as_posix()
@@ -132,7 +151,9 @@ def _collect_audio_files(dataset_dir: Path) -> list[Path]:
     return out
 
 
-def _materialize_preprocess_input_dir(inp_dir: Path, audio_paths: list[Path]) -> dict[str, int]:
+def _materialize_preprocess_input_dir(
+    inp_dir: Path, audio_paths: list[Path]
+) -> dict[str, int]:
     """
     Create a directory containing only audio files (symlink or copy) so upstream preprocess.py
     won't try to load non-audio files (e.g. *.list) from the dataset directory.
@@ -166,12 +187,12 @@ def _materialize_preprocess_input_dir(inp_dir: Path, audio_paths: list[Path]) ->
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Train RVC model for XingTong dataset (v2 + 48k + f0).")
+    ap = argparse.ArgumentParser(description="Train an RVC model (v2 + 48k + f0).")
     ap.add_argument("--exp-name", default="xingtong_v2_48k_f0")
     ap.add_argument(
         "--dataset-dir",
-        default=str(voicelab_root() / "datasets" / "XingTong"),
-        help="Prefer a WSL-native ext4 path (default: VoiceLab/datasets/XingTong).",
+        required=True,
+        help="Dataset directory. Prefer a WSL-native ext4 path for preprocessing/training.",
     )
     ap.add_argument(
         "--stage-dataset",
@@ -181,14 +202,25 @@ def main() -> int:
     ap.add_argument(
         "--dataset-wsl-dir",
         default=None,
-        help="Destination directory for --stage-dataset (default: VoiceLab/datasets/XingTong).",
+        help="Destination directory for --stage-dataset (default: VoiceLab/datasets/<src_name>).",
     )
-    ap.add_argument("--sr", type=int, default=48000, help="Preprocess sample rate (Hz).")
-    ap.add_argument("--sr-tag", default="48k", choices=["48k", "40k", "32k"], help="RVC config tag for training.")
+    ap.add_argument(
+        "--sr", type=int, default=48000, help="Preprocess sample rate (Hz)."
+    )
+    ap.add_argument(
+        "--sr-tag",
+        default="48k",
+        choices=["48k", "40k", "32k"],
+        help="RVC config tag for training.",
+    )
     ap.add_argument("--version", default="v2", choices=["v1", "v2"])
     ap.add_argument("--if-f0", action="store_true", default=True)
-    ap.add_argument("--preprocess-np", type=int, default=8, help="Preprocess/extract parallelism.")
-    ap.add_argument("--per", type=float, default=3.7, help="Preprocess chunk length (seconds).")
+    ap.add_argument(
+        "--preprocess-np", type=int, default=8, help="Preprocess/extract parallelism."
+    )
+    ap.add_argument(
+        "--per", type=float, default=3.7, help="Preprocess chunk length (seconds)."
+    )
     ap.add_argument(
         "--list",
         default=None,
@@ -207,7 +239,9 @@ def main() -> int:
         help="Disable auto-detecting same-name list file under the dataset directory.",
     )
 
-    ap.add_argument("--gpu", default="0", help="GPU id string used by upstream scripts.")
+    ap.add_argument(
+        "--gpu", default="0", help="GPU id string used by upstream scripts."
+    )
     ap.add_argument("--batch-size", type=int, default=4)
     # Based on the user's observed ~10-13 min/epoch on RTX 3060 Laptop 6GB,
     # saving every ~3 epochs gives a 30-40 min checkpoint cadence.
@@ -246,7 +280,12 @@ def main() -> int:
     args = ap.parse_args()
 
     # Ensure runtime exists and is correctly wired.
-    rt = init_runtime(force=False, assets_src=None, download_missing=False, hf_base="https://hf-mirror.com")
+    rt = init_runtime(
+        force=False,
+        assets_src=None,
+        download_missing=False,
+        hf_base="https://hf-mirror.com",
+    )
     run_env = os.environ.copy()
     if args.quiet_warnings:
         # Keep stderr clean; upstream prints lots of harmless deprecation warnings on newer torch.
@@ -260,15 +299,15 @@ def main() -> int:
             dst = (
                 Path(args.dataset_wsl_dir).expanduser()
                 if args.dataset_wsl_dir
-                else (voicelab_root() / "datasets" / "XingTong")
+                else (voicelab_root() / "datasets" / dataset_dir.name)
             )
             dataset_dir = stage_dataset(dataset_dir, dst, force=False)
         if not dataset_dir.exists():
             raise SystemExit(
                 f"Dataset dir not found: {dataset_dir}\n"
                 "If your dataset is on Windows (/mnt/c/...), run:\n"
-                "  uv run python tools/rvc_stage_dataset.py --src /mnt/c/AIGC/数据集/XingTong\n"
-                "then rerun with --dataset-dir pointing to VoiceLab/datasets/XingTong."
+                "  uv run python tools/rvc_stage_dataset.py --src /mnt/c/.../YourDataset\n"
+                "then rerun with --dataset-dir pointing to VoiceLab/datasets/<YourDataset>."
             )
 
     exp = _exp_dir(rt, args.exp_name)
@@ -288,7 +327,11 @@ def main() -> int:
             seen: set[str] = set()
             for row in rows:
                 resolved = resolve_audio_for_dataset(row.audio, dataset_dir)
-                if resolved is None or not resolved.exists() or resolved.suffix.lower() not in AUDIO_EXTS:
+                if (
+                    resolved is None
+                    or not resolved.exists()
+                    or resolved.suffix.lower() not in AUDIO_EXTS
+                ):
                     missing += 1
                     continue
                 key = str(resolved.resolve())
@@ -313,7 +356,9 @@ def main() -> int:
 
         preprocess_inp_dir = (rt / exp_rel / "_dataset_input").resolve()
         stats = _materialize_preprocess_input_dir(preprocess_inp_dir, audio_paths)
-        print(f"[rvc] preprocess input dir: {preprocess_inp_dir} (linked={stats['linked']} copied={stats['copied']})")
+        print(
+            f"[rvc] preprocess input dir: {preprocess_inp_dir} (linked={stats['linked']} copied={stats['copied']})"
+        )
 
         # upstream preprocess.py opens exp_dir/preprocess.log before mkdir, so ensure it exists.
         (rt / exp_rel).mkdir(parents=True, exist_ok=True)
@@ -380,8 +425,18 @@ def main() -> int:
 
     # Step 5: train (auto-resume supported by upstream train.py)
     if not args.skip_train:
-        pre_g = rt / "assets" / ("pretrained_v2" if args.version == "v2" else "pretrained") / f"f0G{args.sr_tag}.pth"
-        pre_d = rt / "assets" / ("pretrained_v2" if args.version == "v2" else "pretrained") / f"f0D{args.sr_tag}.pth"
+        pre_g = (
+            rt
+            / "assets"
+            / ("pretrained_v2" if args.version == "v2" else "pretrained")
+            / f"f0G{args.sr_tag}.pth"
+        )
+        pre_d = (
+            rt
+            / "assets"
+            / ("pretrained_v2" if args.version == "v2" else "pretrained")
+            / f"f0D{args.sr_tag}.pth"
+        )
         train_cmd = [
             sys.executable,
             "infer/modules/train/train.py",
@@ -439,7 +494,9 @@ def main() -> int:
             if args.export_latest_on_interrupt:
                 export_cmd = [
                     sys.executable,
-                    str(Path(__file__).resolve().parent / "rvc_export_latest_weights.py"),
+                    str(
+                        Path(__file__).resolve().parent / "rvc_export_latest_weights.py"
+                    ),
                     "--exp-name",
                     args.exp_name,
                     "--out-name",
@@ -451,9 +508,13 @@ def main() -> int:
                     "--if-f0",
                     "1" if args.if_f0 else "0",
                 ]
-                print("[rvc] exporting inference weights from latest saved checkpoint ...")
+                print(
+                    "[rvc] exporting inference weights from latest saved checkpoint ..."
+                )
                 try:
-                    _run(export_cmd, cwd=Path(__file__).resolve().parents[1], env=run_env)
+                    _run(
+                        export_cmd, cwd=Path(__file__).resolve().parents[1], env=run_env
+                    )
                 except Exception as e:
                     print(f"[rvc] WARN: export failed (you can rerun manually): {e}")
 

@@ -17,6 +17,9 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DATASET_ROOT = REPO_ROOT / "datasets"
+
 
 EXT_PREFERENCE = [
     ".wav",
@@ -68,7 +71,9 @@ def _rewrite_file(rule: RewriteRule) -> tuple[int, int]:
 
         parts = line.split("|", 3)
         if len(parts) < 4:
-            raise SystemExit(f"Invalid .list format: {rule.list_path} line {i}: {line!r}")
+            raise SystemExit(
+                f"Invalid .list format: {rule.list_path} line {i}: {line!r}"
+            )
 
         audio_field, speaker, lang, text = parts
         resolved = _resolve_audio(rule.speaker_dir, audio_field)
@@ -91,8 +96,8 @@ def main() -> int:
     ap.add_argument(
         "--dataset-root",
         type=Path,
-        default=Path("/mnt/c/AIGC/数据集"),
-        help="Target dataset root. Default: /mnt/c/AIGC/数据集",
+        default=DEFAULT_DATASET_ROOT,
+        help="Target dataset root. Default: <repo>/datasets",
     )
     ap.add_argument(
         "--speaker",
@@ -106,7 +111,11 @@ def main() -> int:
     ap.add_argument(
         "--list-subpath",
         action="append",
-        default=["标注文件/{speaker}.list", "{speaker}/{speaker}.list", "{speaker}/{speaker_lc}.list"],
+        default=[
+            "标注文件/{speaker}.list",
+            "{speaker}/{speaker}.list",
+            "{speaker}/{speaker_lc}.list",
+        ],
         help=(
             "Relative path template(s) to find list files. Available vars: {speaker}, {speaker_lc}. "
             "Default covers /标注文件 and per-speaker dirs."
@@ -149,17 +158,23 @@ def main() -> int:
                 list_files.append(p)
 
         if not list_files:
-            raise SystemExit(f"No list files found for speaker={speaker!r} under dataset root={args.dataset_root}")
+            raise SystemExit(
+                f"No list files found for speaker={speaker!r} under dataset root={args.dataset_root}"
+            )
 
         for lp in list_files:
-            changed, missing = _rewrite_file(RewriteRule(list_path=lp, speaker_dir=speaker_dir))
+            changed, missing = _rewrite_file(
+                RewriteRule(list_path=lp, speaker_dir=speaker_dir)
+            )
             total_changed += changed
             total_missing += missing
             processed_files.append(lp)
             print(f"[ok] {lp} changed_lines={changed} missing_audio={missing}")
 
     if total_missing:
-        print(f"[warn] total missing audio references (left unchanged): {total_missing}")
+        print(
+            f"[warn] total missing audio references (left unchanged): {total_missing}"
+        )
         return 2
 
     print(f"[done] files={len(processed_files)} changed_lines={total_changed}")
@@ -168,4 +183,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

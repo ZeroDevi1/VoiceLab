@@ -8,12 +8,16 @@ from pathlib import Path
 
 def _default_out(*, pitch: int) -> Path:
     # Keep filenames ASCII to avoid shell/FS quirks; user can override with --output.
-    return Path(__file__).resolve().parents[1] / "out_wav" / f"taifeng_jj_to_xuan_pitch{pitch}.wav"
+    return (
+        Path(__file__).resolve().parents[1]
+        / "out_wav"
+        / f"taifeng_jj_to_xuan_pitch{pitch}.wav"
+    )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Infer a fixed vocals test song (Taifeng - JiangJiang) -> xuan using tools/rvc_infer_one.py."
+        description="Infer one vocals stem -> xuan using tools/rvc_infer_one.py with a tuned preset."
     )
     ap.add_argument("--exp-name", default="xuan_v2_48k_f0")
     ap.add_argument(
@@ -23,7 +27,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--input",
-        default="/mnt/c/AIGC/音乐/台风/台风 - 蒋蒋_vocals_karaoke_noreverb_dry.wav",
+        required=True,
         help="Vocals-only WAV path.",
     )
     ap.add_argument("--output", default=None)

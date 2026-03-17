@@ -12,7 +12,12 @@ from voicelab_bootstrap import assets_src_root, rvc_vendor_root, runtime_root
 
 
 def _rm_rf(path: Path) -> None:
-    if not path.exists() and not path.is_symlink():
+    try:
+        exists = path.exists()
+    except OSError:
+        exists = False
+
+    if not exists and not path.is_symlink():
         return
     if path.is_symlink() or path.is_file():
         path.unlink(missing_ok=True)
@@ -23,10 +28,16 @@ def _rm_rf(path: Path) -> None:
 def _symlink(src: Path, dst: Path, *, force: bool) -> None:
     if force:
         _rm_rf(dst)
-    if dst.exists() or dst.is_symlink():
+
+    try:
+        dst_exists = dst.exists()
+    except OSError:
+        dst_exists = False
+
+    if dst_exists or dst.is_symlink():
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(str(src), str(dst))
+    os.symlink(str(src), str(dst), target_is_directory=src.is_dir())
 
 
 def _copytree(src: Path, dst: Path, *, force: bool) -> None:
@@ -53,7 +64,9 @@ def _runtime_has_core_assets(rt: Path) -> bool:
     return hubert.exists() and rmvpe.exists()
 
 
-def _http_download(*, url: str, dest: Path, force: bool, timeout_s: int = 60, retries: int = 3) -> None:
+def _http_download(
+    *, url: str, dest: Path, force: bool, timeout_s: int = 60, retries: int = 3
+) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and not force:
         return
@@ -84,7 +97,9 @@ def _http_download(*, url: str, dest: Path, force: bool, timeout_s: int = 60, re
             if attempt >= retries:
                 raise
             sleep_s = min(10, 1 + attempt * 2)
-            print(f"[rvc] WARN: download failed (attempt {attempt}/{retries}): {e}; retry in {sleep_s}s")
+            print(
+                f"[rvc] WARN: download failed (attempt {attempt}/{retries}): {e}; retry in {sleep_s}s"
+            )
             time.sleep(sleep_s)
 
 
@@ -137,7 +152,9 @@ def _download_missing_assets(*, src_assets: Path, hf_base: str, force: bool) -> 
         _http_download(url=url, dest=dest, force=force)
 
 
-def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool, hf_base: str) -> Path:
+def init_runtime(
+    *, force: bool, assets_src: Path | None, download_missing: bool, hf_base: str
+) -> Path:
     vendor = rvc_vendor_root()
     if not vendor.exists():
         raise SystemExit(
@@ -185,7 +202,10 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
 
     missing_required = _missing_required_assets(src_assets)
     if missing_required and download_missing:
-        print(f"[rvc] Missing {len(missing_required)} core asset(s); downloading into {src_assets} ...", flush=True)
+        print(
+            f"[rvc] Missing {len(missing_required)} core asset(s); downloading into {src_assets} ...",
+            flush=True,
+        )
         _download_missing_assets(src_assets=src_assets, hf_base=hf_base, force=False)
         missing_required = _missing_required_assets(src_assets)
     if missing_required:
@@ -198,32 +218,57 @@ def init_runtime(*, force: bool, assets_src: Path | None, download_missing: bool
     # hubert / rmvpe are required for feature/f0 extraction.
     _ensure_dir(rt / "assets" / "hubert")
     _ensure_dir(rt / "assets" / "rmvpe")
-    _symlink(src_assets / "hubert" / "hubert_base.pt", rt / "assets" / "hubert" / "hubert_base.pt", force=force)
-    _symlink(src_assets / "rmvpe" / "rmvpe.pt", rt / "assets" / "rmvpe" / "rmvpe.pt", force=force)
+    _symlink(
+        src_assets / "hubert" / "hubert_base.pt",
+        rt / "assets" / "hubert" / "hubert_base.pt",
+        force=force,
+    )
+    _symlink(
+        src_assets / "rmvpe" / "rmvpe.pt",
+        rt / "assets" / "rmvpe" / "rmvpe.pt",
+        force=force,
+    )
 
     # pretrained weights for v1/v2 (optional).
     if (src_assets / "pretrained").exists():
         _symlink(src_assets / "pretrained", rt / "assets" / "pretrained", force=force)
     if (src_assets / "pretrained_v2").exists():
-        _symlink(src_assets / "pretrained_v2", rt / "assets" / "pretrained_v2", force=force)
+        _symlink(
+            src_assets / "pretrained_v2", rt / "assets" / "pretrained_v2", force=force
+        )
     else:
         opt = _missing_optional_assets(src_assets)
         if opt:
-            print("[rvc] NOTE: pretrained weights not found; training can still run from scratch.", flush=True)
+            print(
+                "[rvc] NOTE: pretrained weights not found; training can still run from scratch.",
+                flush=True,
+            )
 
     return rt
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Initialize workflows/rvc/runtime without modifying vendor.")
-    ap.add_argument("--force", action="store_true", help="Recreate runtime links/copies.")
+    ap = argparse.ArgumentParser(
+        description="Initialize workflows/rvc/runtime without modifying vendor."
+    )
+    ap.add_argument(
+        "--force", action="store_true", help="Recreate runtime links/copies."
+    )
     ap.add_argument(
         "--assets-src",
         type=Path,
         default=None,
-        help="Path to an existing RVC assets directory (default: /mnt/c/AIGC/RVC20240604Nvidia/assets).",
+        help=(
+            "Path to an existing RVC assets directory. "
+            "If omitted, VoiceLab uses VOICELAB_ASSETS_DIR/rvc "
+            "(default: <repo>/.cache/voicelab/assets/rvc)."
+        ),
     )
-    ap.add_argument("--download-missing", action="store_true", help="Download missing assets via HuggingFace mirror.")
+    ap.add_argument(
+        "--download-missing",
+        action="store_true",
+        help="Download missing assets via HuggingFace mirror.",
+    )
     ap.add_argument(
         "--hf-base",
         default="https://hf-mirror.com",
@@ -240,9 +285,13 @@ def main() -> int:
     print(f"[rvc] runtime ready: {rt}")
     print("")
     print("[rvc] Next steps:")
-    print("  - Train (50 epoch): uv run python tools/rvc_train.py --total-epoch 50")
+    print(
+        "  - Train (50 epoch): uv run python tools/rvc_train.py --dataset-dir /path/to/dataset --total-epoch 50"
+    )
     print("  - Train index:      uv run python tools/rvc_train_index.py")
-    print("  - Infer one file:   uv run python tools/rvc_infer_one.py --pitch 12")
+    print(
+        "  - Infer one file:   uv run python tools/rvc_infer_one.py --input /path/to/audio.wav --pitch 12"
+    )
     return 0
 
 

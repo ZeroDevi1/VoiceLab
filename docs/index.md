@@ -8,7 +8,7 @@ VoiceLab 是一个语音相关工作区：把上游项目（CosyVoice / RVC / MS
 - vendor 拉取（默认 CN profile：GitHub 镜像前缀 + hf-mirror）
 - 各 workflow 的 `uv sync`
 - 自动下载所需模型/资产（不依赖系统代理）
-- 初始化各 workflow runtime
+- 初始化各 workflow runtime（`gpt_sovits` 会补齐常用 pretrained 共享缓存）
 
 ```bash
 git clone git@github.com:ZeroDevi1/VoiceLab.git
@@ -17,12 +17,14 @@ export VOICELAB_DIR="$PWD"
 
 cd "$VOICELAB_DIR"
 uv run -m voicelab bootstrap
+uv run -m voicelab doctor
 ```
 
 常用参数：
 - `--dry-run`：只打印将要执行的步骤
 - `--assets-dir /path/to/cache`：指定共享缓存目录（默认 `~/.cache/voicelab/assets`）
 - `--profile global`：不使用 CN 默认镜像
+- `voicelab doctor`：检查系统依赖、vendor、env、assets 与 runtime 状态
 
 ## Workflows
 
@@ -38,6 +40,10 @@ uv run -m voicelab bootstrap
 ## Datasets
 
 - `.list` 标注格式与使用：`docs/datasets/list_annotations.md`
+
+## 运维与迁移
+
+- 新系统迁移与环境初始化实施计划：`docs/bootstrap_migration_plan.md`
 
 ## Wiki
 

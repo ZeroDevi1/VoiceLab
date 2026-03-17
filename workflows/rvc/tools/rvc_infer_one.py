@@ -108,14 +108,22 @@ def _pan_gains_from_input(
     # Map frame centers (input time) -> sample-level gains (output time).
     centers = (np.arange(len(r), dtype=np.float32) * hop + (frame * 0.5)) / float(sr_in)
     t_out = np.arange(int(out_len), dtype=np.float32) / float(sr_out)
-    gL = np.interp(t_out, centers, gL_f, left=float(gL_f[0]), right=float(gL_f[-1])).astype(np.float32)
-    gR = np.interp(t_out, centers, gR_f, left=float(gR_f[0]), right=float(gR_f[-1])).astype(np.float32)
+    gL = np.interp(
+        t_out, centers, gL_f, left=float(gL_f[0]), right=float(gL_f[-1])
+    ).astype(np.float32)
+    gR = np.interp(
+        t_out, centers, gR_f, left=float(gR_f[0]), right=float(gR_f[-1])
+    ).astype(np.float32)
     return gL, gR
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Infer one file with a trained RVC model (RMVPE locked).")
-    ap.add_argument("--exp-name", default="xingtong_v2_48k_f0", help="Model/index prefix.")
+    ap = argparse.ArgumentParser(
+        description="Infer one file with a trained RVC model (RMVPE locked)."
+    )
+    ap.add_argument(
+        "--exp-name", default="xingtong_v2_48k_f0", help="Model/index prefix."
+    )
     ap.add_argument(
         "--model",
         default=None,
@@ -124,10 +132,15 @@ def main() -> int:
             "If omitted, uses <exp-name>.pth."
         ),
     )
-    ap.add_argument("--input", default="/mnt/c/AIGC/炫神/马头有大马头来了_karaoke_noreverb_dry.wav")
+    ap.add_argument("--input", required=True, help="Input audio path.")
     ap.add_argument("--output", default=None)
 
-    ap.add_argument("--pitch", type=int, default=12, help="Pitch shift in semitones (+12 is one octave up).")
+    ap.add_argument(
+        "--pitch",
+        type=int,
+        default=12,
+        help="Pitch shift in semitones (+12 is one octave up).",
+    )
     ap.add_argument(
         "--f0-method",
         default="rmvpe",
@@ -150,9 +163,21 @@ def main() -> int:
             "'dual': convert L and R independently (slow; may cause width/phase artifacts)."
         ),
     )
-    ap.add_argument("--pan-window-ms", type=int, default=50, help="RMS window for --stereo-mode pan.")
-    ap.add_argument("--pan-hop-ms", type=int, default=10, help="RMS hop for --stereo-mode pan.")
-    ap.add_argument("--pan-strength", type=float, default=1.0, help="0..1, blend panning towards center.")
+    ap.add_argument(
+        "--pan-window-ms",
+        type=int,
+        default=50,
+        help="RMS window for --stereo-mode pan.",
+    )
+    ap.add_argument(
+        "--pan-hop-ms", type=int, default=10, help="RMS hop for --stereo-mode pan."
+    )
+    ap.add_argument(
+        "--pan-strength",
+        type=float,
+        default=1.0,
+        help="0..1, blend panning towards center.",
+    )
     ap.add_argument(
         "--dual-polarity-fix",
         action="store_true",
@@ -172,12 +197,24 @@ def main() -> int:
         help="Output WAV subtype. PCM_16 is the most compatible with players/editors.",
     )
 
-    ap.add_argument("--device", default=None, help="Override device (e.g. cuda:0 / cpu).")
-    ap.add_argument("--is-half", action="store_true", default=True, help="Use FP16 where applicable.")
+    ap.add_argument(
+        "--device", default=None, help="Override device (e.g. cuda:0 / cpu)."
+    )
+    ap.add_argument(
+        "--is-half",
+        action="store_true",
+        default=True,
+        help="Use FP16 where applicable.",
+    )
     args = ap.parse_args()
     normalize = not bool(args.no_normalize)
 
-    rt = init_runtime(force=False, assets_src=None, download_missing=False, hf_base="https://hf-mirror.com")
+    rt = init_runtime(
+        force=False,
+        assets_src=None,
+        download_missing=False,
+        hf_base="https://hf-mirror.com",
+    )
     ensure_runtime_pythonpath()
     # Upstream RVC uses lots of relative paths like `configs/...`, `assets/...`, `logs/...`.
     # Ensure we run from the runtime root so `Config()` and VC pipeline can find files.
@@ -223,13 +260,19 @@ def main() -> int:
             "Or pass --model <filename.pth> (saved under runtime/assets/weights/)."
         )
     if not index_path.exists():
-        raise SystemExit(f"Index not found: {index_path}\nRun: uv run python tools/rvc_train_index.py")
+        raise SystemExit(
+            f"Index not found: {index_path}\nRun: uv run python tools/rvc_train_index.py"
+        )
 
     input_path = Path(args.input)
     if not input_path.exists():
         raise SystemExit(f"Input audio not found: {input_path}")
 
-    out_path = Path(args.output) if args.output else _default_output(input_path, pitch=int(args.pitch))
+    out_path = (
+        Path(args.output)
+        if args.output
+        else _default_output(input_path, pitch=int(args.pitch))
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Required by upstream VC.get_vc() and index lookup helper.
@@ -244,8 +287,7 @@ def main() -> int:
         import soundfile as sf  # type: ignore
     except Exception as e:
         raise SystemExit(
-            f"Missing dependencies for inference: {e}\n"
-            "Run: cd workflows/rvc && uv sync"
+            f"Missing dependencies for inference: {e}\nRun: cd workflows/rvc && uv sync"
         )
 
     config = Config()
@@ -336,7 +378,9 @@ def main() -> int:
                 corr = float(np.dot(a, b) / denom) if denom > 0 else 0.0
                 if corr < float(args.dual_polarity_threshold):
                     yR = -yR
-                    print(f"[rvc] dual polarity fix: corr={corr:.3f} < {float(args.dual_polarity_threshold):.3f}, flipped R")
+                    print(
+                        f"[rvc] dual polarity fix: corr={corr:.3f} < {float(args.dual_polarity_threshold):.3f}, flipped R"
+                    )
         y_out = np.stack([yL, yR], axis=1)
     else:
         raise SystemExit(f"Unsupported stereo mode: {args.stereo_mode}")

@@ -15,13 +15,14 @@ def _is_wsl_mnt_path(p: Path) -> bool:
     except Exception:
         return p.as_posix().startswith("/mnt/")
 
+
 def stage_dataset(
     src: Path,
     dst: Path,
     *,
     force: bool,
     copy_list: bool = True,
-    annotation_dir: Path = Path("/mnt/c/AIGC/数据集/标注文件"),
+    annotation_dir: Path | None = None,
 ) -> Path:
     """
     Copy a dataset from Windows mount (/mnt/c/...) into WSL native ext4 to avoid 9P I/O bottlenecks.
@@ -36,18 +37,27 @@ def stage_dataset(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Copy dataset into WSL native path for faster I/O.")
-    ap.add_argument("--src", default="/mnt/c/AIGC/数据集/XingTong")
+    ap = argparse.ArgumentParser(
+        description="Copy dataset into WSL native path for faster I/O."
+    )
+    ap.add_argument("--src", required=True, help="Source dataset dir.")
     ap.add_argument(
         "--dst",
-        default=str(voicelab_root() / "datasets" / "XingTong"),
-        help="WSL-native destination directory (default: VoiceLab/datasets/XingTong).",
+        default=None,
+        help="WSL-native destination directory (default: VoiceLab/datasets/<src_name>).",
     )
-    ap.add_argument("--force", action="store_true", help="Make destination match source (rsync --delete).")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Make destination match source (rsync --delete).",
+    )
     ap.add_argument(
         "--annotation-dir",
-        default="/mnt/c/AIGC/数据集/标注文件",
-        help="Fallback directory containing centralized *.list annotation files.",
+        default=None,
+        help=(
+            "Fallback directory containing centralized *.list annotation files "
+            "(default: VOICELAB_ANNOTATION_DIR or <repo>/datasets/annotations)."
+        ),
     )
     ap.add_argument(
         "--no-copy-list",
@@ -57,7 +67,7 @@ def main() -> int:
     args = ap.parse_args()
 
     src = Path(args.src)
-    dst = Path(args.dst)
+    dst = Path(args.dst) if args.dst else (voicelab_root() / "datasets" / src.name)
     if not _is_wsl_mnt_path(src):
         print(f"[rvc] NOTE: src does not look like a /mnt/<drive>/ path: {src}")
 
@@ -66,7 +76,9 @@ def main() -> int:
         dst,
         force=bool(args.force),
         copy_list=not bool(args.no_copy_list),
-        annotation_dir=Path(args.annotation_dir),
+        annotation_dir=Path(args.annotation_dir).expanduser()
+        if args.annotation_dir
+        else None,
     )
     print("")
     print("[rvc] Next (recommended):")

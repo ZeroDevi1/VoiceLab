@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from voicelab.bootstrap import resolve_annotation_dir
 from voicelab.list_annotations import find_same_name_list
 
 
@@ -40,7 +41,7 @@ def ensure_list_present(
     src: Path,
     dst: Path,
     *,
-    annotation_dir: Path = Path("/mnt/c/AIGC/数据集/标注文件"),
+    annotation_dir: Path | None = None,
 ) -> Path | None:
     """
     Ensure a "same-name" *.list file exists under dst.
@@ -50,6 +51,10 @@ def ensure_list_present(
     2) else if src has same-name list -> copy it into dst
     3) else if annotation_dir has <src.name>.list or <src.name.lower()>.list -> copy into dst
     """
+    ann_dir = resolve_annotation_dir(
+        str(annotation_dir) if annotation_dir is not None else None
+    )
+
     existing = find_same_name_list(dst)
     if existing is not None:
         return existing
@@ -63,8 +68,8 @@ def ensure_list_present(
 
     name = src.name
     candidates = [
-        annotation_dir / f"{name}.list",
-        annotation_dir / f"{name.lower()}.list",
+        ann_dir / f"{name}.list",
+        ann_dir / f"{name.lower()}.list",
     ]
     for c in candidates:
         if c.exists() and c.is_file():
@@ -74,4 +79,3 @@ def ensure_list_present(
             return dst_list
 
     return None
-

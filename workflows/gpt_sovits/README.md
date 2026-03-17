@@ -10,5 +10,15 @@
 
 ```bash
 cd "${VOICELAB_DIR:-$PWD}"
-uv run -m voicelab vendor sync
+uv run -m voicelab bootstrap --workflows gpt_sovits
+uv run -m voicelab doctor
+```
+
+说明：当前 `bootstrap` 会为 `gpt_sovits` 完成：vendor 同步、workflow 环境初始化、runtime 目录准备，以及常用 pretrained 共享缓存下载（默认在 `.cache/voicelab/assets/gpt_sovits/`）。
+
+如需重新下载共享缓存：
+
+```bash
+cd "${VOICELAB_DIR:-$PWD}"
+uv run -m voicelab bootstrap --workflows gpt_sovits --force
 ```

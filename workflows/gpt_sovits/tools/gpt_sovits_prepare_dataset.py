@@ -7,8 +7,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-from voicelab_bootstrap import data_root, gpt_sovits_vendor_root, runtime_root
-from voicelab.list_annotations import AUDIO_EXTS, find_same_name_list, parse_list, resolve_audio_for_dataset
+from voicelab_bootstrap import (
+    data_root,
+    default_pretrained_s2g,
+    gpt_sovits_vendor_root,
+    runtime_root,
+    shared_pretrained_root,
+    voicelab_root,
+)
+from voicelab.list_annotations import (
+    AUDIO_EXTS,
+    find_same_name_list,
+    parse_list,
+    resolve_audio_for_dataset,
+)
 
 
 def _clean_text_field(text: str) -> str:
@@ -80,7 +92,11 @@ def _build_effective_list_and_wav_dir(
             continue
 
         resolved = resolve_audio_for_dataset(audio_field, dataset_dir)
-        if resolved is None or not resolved.exists() or resolved.suffix.lower() not in AUDIO_EXTS:
+        if (
+            resolved is None
+            or not resolved.exists()
+            or resolved.suffix.lower() not in AUDIO_EXTS
+        ):
             missing_audio += 1
             continue
 
@@ -107,9 +123,19 @@ def _build_effective_list_and_wav_dir(
         selected += 1
 
     eff_list = out_dir / "_effective.list"
-    eff_list.write_text("\n".join(effective_lines) + ("\n" if effective_lines else ""), encoding="utf-8")
+    eff_list.write_text(
+        "\n".join(effective_lines) + ("\n" if effective_lines else ""), encoding="utf-8"
+    )
 
-    return eff_list, wav_inp_dir, {"selected": selected, "missing_audio": missing_audio, "missing_text": missing_text}
+    return (
+        eff_list,
+        wav_inp_dir,
+        {
+            "selected": selected,
+            "missing_audio": missing_audio,
+            "missing_text": missing_text,
+        },
+    )
 
 
 def _run_vendor(script_rel: str, *, vendor_root: Path, env: dict[str, str]) -> None:
@@ -146,23 +172,48 @@ def _merge_parts_semantic(opt_dir: Path, parts: int) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Prepare GPT-SoVITS dataset using a same-name .list (preferred).")
-    ap.add_argument("--dataset-dir", required=True, help="Dataset dir containing audio files.")
-    ap.add_argument("--exp-name", default="", help="Experiment name (default: dataset dir name).")
-    ap.add_argument("--list", default="", help="Optional .list path. If empty, auto-detect same-name list.")
+    ap = argparse.ArgumentParser(
+        description="Prepare GPT-SoVITS dataset using a same-name .list (preferred)."
+    )
+    ap.add_argument(
+        "--dataset-dir", required=True, help="Dataset dir containing audio files."
+    )
+    ap.add_argument(
+        "--exp-name", default="", help="Experiment name (default: dataset dir name)."
+    )
+    ap.add_argument(
+        "--list",
+        default="",
+        help="Optional .list path. If empty, auto-detect same-name list.",
+    )
     ap.add_argument(
         "--annotation-dir",
-        default="/mnt/c/AIGC/数据集/标注文件",
-        help="Centralized list dir used when dataset-dir has no same-name .list.",
+        default=None,
+        help=(
+            "Centralized list dir used when dataset-dir has no same-name .list "
+            "(default: VOICELAB_ANNOTATION_DIR or <repo>/datasets/annotations)."
+        ),
     )
-    ap.add_argument("--parts", type=int, default=1, help="Parallel parts (matches vendor all_parts). Default: 1")
+    ap.add_argument(
+        "--parts",
+        type=int,
+        default=1,
+        help="Parallel parts (matches vendor all_parts). Default: 1",
+    )
     ap.add_argument(
         "--gpu-numbers",
         default="0",
         help="GPU numbers split by '-' (e.g. '0-1'). Used to set _CUDA_VISIBLE_DEVICES per part.",
     )
-    ap.add_argument("--is-half", action="store_true", default=True, help="Use fp16 where supported (default: enabled).")
-    ap.add_argument("--no-is-half", action="store_false", dest="is_half", help="Disable fp16.")
+    ap.add_argument(
+        "--is-half",
+        action="store_true",
+        default=True,
+        help="Use fp16 where supported (default: enabled).",
+    )
+    ap.add_argument(
+        "--no-is-half", action="store_false", dest="is_half", help="Disable fp16."
+    )
     ap.add_argument(
         "--version",
         default="v2",
@@ -193,13 +244,26 @@ def main() -> int:
 
     vendor = gpt_sovits_vendor_root()
     if not vendor.exists():
-        raise SystemExit(f"[gpt_sovits] vendor not found: {vendor} (run: uv run -m voicelab vendor sync)")
+        raise SystemExit(
+            f"[gpt_sovits] vendor not found: {vendor} (run: uv run -m voicelab vendor sync)"
+        )
 
     dataset_dir = Path(args.dataset_dir).expanduser().resolve()
     if not dataset_dir.exists():
         raise SystemExit(f"[gpt_sovits] dataset-dir not found: {dataset_dir}")
 
-    annotation_dir = Path(args.annotation_dir).expanduser().resolve()
+    annotation_dir = (
+        Path(args.annotation_dir).expanduser().resolve()
+        if args.annotation_dir
+        else Path(
+            os.environ.get(
+                "VOICELAB_ANNOTATION_DIR",
+                str(voicelab_root() / "datasets" / "annotations"),
+            )
+        )
+        .expanduser()
+        .resolve()
+    )
     list_path = _pick_list_path(dataset_dir, annotation_dir, args.list)
 
     exp_name = args.exp_name.strip() or dataset_dir.name
@@ -225,20 +289,38 @@ def main() -> int:
     if len(gpu_names) < parts:
         gpu_names = (gpu_names * (parts // max(1, len(gpu_names)) + 1))[:parts]
 
+    shared_pretrained = shared_pretrained_root()
     bert_dir = (
         Path(args.bert_pretrained_dir).expanduser()
         if str(args.bert_pretrained_dir).strip()
-        else (vendor / "GPT_SoVITS" / "pretrained_models" / "chinese-roberta-wwm-ext-large")
+        else (
+            (shared_pretrained / "chinese-roberta-wwm-ext-large")
+            if (shared_pretrained / "chinese-roberta-wwm-ext-large").exists()
+            else (
+                vendor
+                / "GPT_SoVITS"
+                / "pretrained_models"
+                / "chinese-roberta-wwm-ext-large"
+            )
+        )
     ).resolve()
     cnhubert_dir = (
         Path(args.cnhubert_base_dir).expanduser()
         if str(args.cnhubert_base_dir).strip()
-        else (vendor / "GPT_SoVITS" / "pretrained_models" / "chinese-hubert-base")
+        else (
+            (shared_pretrained / "chinese-hubert-base")
+            if (shared_pretrained / "chinese-hubert-base").exists()
+            else (vendor / "GPT_SoVITS" / "pretrained_models" / "chinese-hubert-base")
+        )
     ).resolve()
     pretrained_s2g = (
         Path(args.pretrained_s2g).expanduser()
         if str(args.pretrained_s2g).strip()
-        else (vendor / "GPT_SoVITS" / "pretrained_models" / "s2G488k.pth")
+        else (
+            default_pretrained_s2g(str(args.version))
+            if default_pretrained_s2g(str(args.version)).exists()
+            else (vendor / "GPT_SoVITS" / "pretrained_models" / "s2G488k.pth")
+        )
     ).resolve()
     s2config = (
         Path(args.s2config_path).expanduser()
@@ -264,7 +346,9 @@ def main() -> int:
                 "_CUDA_VISIBLE_DEVICES": str(gpu_names[i]),
             }
         )
-        _run_vendor("GPT_SoVITS/prepare_datasets/1-get-text.py", vendor_root=vendor, env=env)
+        _run_vendor(
+            "GPT_SoVITS/prepare_datasets/1-get-text.py", vendor_root=vendor, env=env
+        )
     _merge_parts_text(opt_dir, parts)
 
     # 2) hubert + wav32k
@@ -284,7 +368,11 @@ def main() -> int:
                 "_CUDA_VISIBLE_DEVICES": str(gpu_names[i]),
             }
         )
-        _run_vendor("GPT_SoVITS/prepare_datasets/2-get-hubert-wav32k.py", vendor_root=vendor, env=env)
+        _run_vendor(
+            "GPT_SoVITS/prepare_datasets/2-get-hubert-wav32k.py",
+            vendor_root=vendor,
+            env=env,
+        )
 
     # 3) semantic tokens -> 6-name2semantic.tsv
     for i in range(parts):
@@ -303,7 +391,9 @@ def main() -> int:
                 "_CUDA_VISIBLE_DEVICES": str(gpu_names[i]),
             }
         )
-        _run_vendor("GPT_SoVITS/prepare_datasets/3-get-semantic.py", vendor_root=vendor, env=env)
+        _run_vendor(
+            "GPT_SoVITS/prepare_datasets/3-get-semantic.py", vendor_root=vendor, env=env
+        )
     _merge_parts_semantic(opt_dir, parts)
 
     # Mirror config outputs in runtime/ for convenience (the actual dataset lives in data/).

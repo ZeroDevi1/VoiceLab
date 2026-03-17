@@ -56,6 +56,7 @@ copy "docs/index.md" "Home.md"
 # Format: "source_path|Wiki Page Name (file name without .md)"
 pages=(
   "docs/WIKI_SYNC.md|Wiki 同步说明"
+  "docs/bootstrap_migration_plan.md|新系统迁移与环境初始化实施计划"
   "docs/datasets/list_annotations.md|数据集 list 标注格式与使用"
   "docs/workflows/rvc/rvc_xingtong_wsl_ubuntu2404.md|RVC 星瞳（WSL Ubuntu24.04）"
   "docs/workflows/rvc/rvc_xuan_wsl_ubuntu2404.md|RVC xuan（WSL Ubuntu24.04）"

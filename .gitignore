@@ -6,6 +6,9 @@ vendor/
 
 ## Large training artifacts (never tracked)
 /datasets/
+!/datasets/
+!/datasets/annotations/
+!/datasets/annotations/.gitkeep
 workflows/**/data/
 workflows/**/exp/
 workflows/**/export_packs/

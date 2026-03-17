@@ -9,18 +9,29 @@ from voicelab.list_annotations import find_same_name_list
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Stage a GPT-SoVITS dataset into a fast local path (ext4).")
-    ap.add_argument("--src", required=True, help="Source dataset dir (often under /mnt/c/...).")
+    ap = argparse.ArgumentParser(
+        description="Stage a GPT-SoVITS dataset into a fast local path (ext4)."
+    )
+    ap.add_argument(
+        "--src", required=True, help="Source dataset dir (often under /mnt/c/...)."
+    )
     ap.add_argument(
         "--dst",
         default=None,
         help="Destination dir (default: VoiceLab/datasets/<src_name>).",
     )
-    ap.add_argument("--force", action="store_true", help="Make destination match source (rsync --delete).")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Make destination match source (rsync --delete).",
+    )
     ap.add_argument(
         "--annotation-dir",
-        default="/mnt/c/AIGC/数据集/标注文件",
-        help="Fallback directory containing centralized *.list annotation files.",
+        default=None,
+        help=(
+            "Fallback directory containing centralized *.list annotation files "
+            "(default: VOICELAB_ANNOTATION_DIR or <repo>/datasets/annotations)."
+        ),
     )
     ap.add_argument(
         "--no-copy-list",
@@ -38,7 +49,13 @@ def main() -> int:
 
     stage_dataset_rsync(src, dst, force=bool(args.force))
     if not args.no_copy_list:
-        lp = ensure_list_present(src, dst, annotation_dir=Path(args.annotation_dir))
+        lp = ensure_list_present(
+            src,
+            dst,
+            annotation_dir=Path(args.annotation_dir).expanduser()
+            if args.annotation_dir
+            else None,
+        )
         if lp is not None:
             print(f"[gpt_sovits] list available: {lp}")
         else:

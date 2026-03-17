@@ -7,7 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from voicelab_bootstrap import data_root, gpt_sovits_vendor_root, runtime_root
+from voicelab_bootstrap import (
+    data_root,
+    default_pretrained_s2d,
+    default_pretrained_s2g,
+    gpt_sovits_vendor_root,
+    runtime_root,
+)
 
 
 def _run(cmd: list[str], *, cwd: Path, env: dict[str, str]) -> None:
@@ -16,19 +22,35 @@ def _run(cmd: list[str], *, cwd: Path, env: dict[str, str]) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Train SoVITS (stage2) for GPT-SoVITS using prepared dataset under workflow data/.")
-    ap.add_argument("--exp-name", required=True, help="Experiment name (data/<exp-name>).")
-    ap.add_argument("--version", default="v2", help="Model version (sets env 'version' + config model.version).")
+    ap = argparse.ArgumentParser(
+        description="Train SoVITS (stage2) for GPT-SoVITS using prepared dataset under workflow data/."
+    )
+    ap.add_argument(
+        "--exp-name", required=True, help="Experiment name (data/<exp-name>)."
+    )
+    ap.add_argument(
+        "--version",
+        default="v2",
+        help="Model version (sets env 'version' + config model.version).",
+    )
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--save-every-epoch", type=int, default=1)
     ap.add_argument("--text-low-lr-rate", type=float, default=0.4)
-    ap.add_argument("--gpu-numbers", default="0", help="gpu_numbers string written to config train.gpu_numbers.")
+    ap.add_argument(
+        "--gpu-numbers",
+        default="0",
+        help="gpu_numbers string written to config train.gpu_numbers.",
+    )
     ap.add_argument("--grad-ckpt", type=int, default=0, choices=[0, 1])
     ap.add_argument("--lora-rank", type=int, default=0)
     ap.add_argument("--fp16-run", type=int, default=1, choices=[0, 1])
-    ap.add_argument("--pretrained-s2g", default="", help="Optional pretrained_s2G path.")
-    ap.add_argument("--pretrained-s2d", default="", help="Optional pretrained_s2D path.")
+    ap.add_argument(
+        "--pretrained-s2g", default="", help="Optional pretrained_s2G path."
+    )
+    ap.add_argument(
+        "--pretrained-s2d", default="", help="Optional pretrained_s2D path."
+    )
     ap.add_argument("--if-save-latest", type=int, default=1, choices=[0, 1])
     ap.add_argument("--if-save-every-weights", type=int, default=0, choices=[0, 1])
     args = ap.parse_args()
@@ -40,7 +62,9 @@ def main() -> int:
     exp_name = args.exp_name.strip()
     opt_dir = (data_root() / exp_name).resolve()
     if not opt_dir.exists():
-        raise SystemExit(f"[gpt_sovits] dataset not prepared: {opt_dir} (run gpt_sovits_prepare_dataset.py first)")
+        raise SystemExit(
+            f"[gpt_sovits] dataset not prepared: {opt_dir} (run gpt_sovits_prepare_dataset.py first)"
+        )
 
     required = [
         opt_dir / "2-name2text.txt",
@@ -50,11 +74,21 @@ def main() -> int:
     ]
     missing = [p for p in required if not p.exists()]
     if missing:
-        raise SystemExit("[gpt_sovits] missing prepared dataset artifacts:\n" + "\n".join(f"  - {p}" for p in missing))
+        raise SystemExit(
+            "[gpt_sovits] missing prepared dataset artifacts:\n"
+            + "\n".join(f"  - {p}" for p in missing)
+        )
 
     # Base template depends on version family.
-    tmpl = vendor / "GPT_SoVITS" / "configs" / (
-        "s2.json" if args.version not in {"v2Pro", "v2ProPlus"} else f"s2{args.version}.json"
+    tmpl = (
+        vendor
+        / "GPT_SoVITS"
+        / "configs"
+        / (
+            "s2.json"
+            if args.version not in {"v2Pro", "v2ProPlus"}
+            else f"s2{args.version}.json"
+        )
     )
     data = json.loads(tmpl.read_text(encoding="utf-8"))
 
@@ -77,10 +111,20 @@ def main() -> int:
     data["train"]["grad_ckpt"] = bool(int(args.grad_ckpt))
     data["train"]["lora_rank"] = int(args.lora_rank)
 
-    if str(args.pretrained_s2g).strip():
-        data["train"]["pretrained_s2G"] = str(Path(args.pretrained_s2g).expanduser().resolve())
-    if str(args.pretrained_s2d).strip():
-        data["train"]["pretrained_s2D"] = str(Path(args.pretrained_s2d).expanduser().resolve())
+    pretrained_s2g = (
+        Path(args.pretrained_s2g).expanduser().resolve()
+        if str(args.pretrained_s2g).strip()
+        else default_pretrained_s2g(str(args.version))
+    )
+    pretrained_s2d = (
+        Path(args.pretrained_s2d).expanduser().resolve()
+        if str(args.pretrained_s2d).strip()
+        else default_pretrained_s2d(str(args.version))
+    )
+    if pretrained_s2g.exists():
+        data["train"]["pretrained_s2G"] = str(pretrained_s2g)
+    if pretrained_s2d.exists():
+        data["train"]["pretrained_s2D"] = str(pretrained_s2d)
 
     data["model"]["version"] = str(args.version)
     # Put checkpoints next to the prepared dataset, matching vendor behavior.
@@ -92,13 +136,26 @@ def main() -> int:
     cfg_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
     env = os.environ.copy()
-    env.update({"version": str(args.version), "_CUDA_VISIBLE_DEVICES": str(args.gpu_numbers)})
+    env.update(
+        {"version": str(args.version), "_CUDA_VISIBLE_DEVICES": str(args.gpu_numbers)}
+    )
 
-    train_script = vendor / "GPT_SoVITS" / ("s2_train.py" if args.version in {"v1", "v2", "v2Pro", "v2ProPlus"} else "s2_train_v3_lora.py")
-    _run([sys.executable, str(train_script), "--config", str(cfg_path)], cwd=vendor, env=env)
+    train_script = (
+        vendor
+        / "GPT_SoVITS"
+        / (
+            "s2_train.py"
+            if args.version in {"v1", "v2", "v2Pro", "v2ProPlus"}
+            else "s2_train_v3_lora.py"
+        )
+    )
+    _run(
+        [sys.executable, str(train_script), "--config", str(cfg_path)],
+        cwd=vendor,
+        env=env,
+    )
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -44,11 +44,12 @@ uv sync
 
 完整流程见：`docs/workflows/cosyvoice/cosyvoice_xuan_sft_wsl_ubuntu2404.md`
 
-新环境推荐一键初始化（vendor + uv sync + 模型下载 + runtime init）：
+新环境推荐一键初始化（vendor + uv sync + 模型下载 + runtime init；`gpt_sovits` 会补齐常用 pretrained 共享缓存）：
 
 ```bash
 cd "$VOICELAB_DIR"
 uv run -m voicelab bootstrap
+uv run -m voicelab doctor
 ```
 
 ### 项目内共享缓存说明（训练/推理代码无需修改）

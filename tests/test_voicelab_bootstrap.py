@@ -52,12 +52,17 @@ class TestParseWorkflows(unittest.TestCase):
     def test_parse_and_dedupe(self) -> None:
         from voicelab.bootstrap import parse_workflows
 
-        self.assertEqual(parse_workflows("rvc,msst,rvc"), ["rvc", "msst"])
+        self.assertEqual(
+            parse_workflows("rvc,msst,gpt_sovits,rvc"),
+            ["rvc", "msst", "gpt_sovits"],
+        )
 
     def test_empty_uses_default(self) -> None:
         from voicelab.bootstrap import parse_workflows
 
-        self.assertEqual(parse_workflows(""), ["cosyvoice", "rvc", "msst"])
+        self.assertEqual(
+            parse_workflows(""), ["cosyvoice", "rvc", "msst", "gpt_sovits"]
+        )
 
     def test_invalid_raises(self) -> None:
         from voicelab.bootstrap import parse_workflows
@@ -83,6 +88,38 @@ class TestAssetsDir(unittest.TestCase):
                 os.environ.pop("VOICELAB_ASSETS_DIR", None)
             else:
                 os.environ["VOICELAB_ASSETS_DIR"] = old
+
+
+class TestAnnotationDir(unittest.TestCase):
+    def test_annotation_dir_defaults_to_repo_datasets_annotations(self) -> None:
+        from voicelab.bootstrap import repo_root, resolve_annotation_dir
+
+        old = os.environ.pop("VOICELAB_ANNOTATION_DIR", None)
+        try:
+            got = resolve_annotation_dir(None)
+        finally:
+            if old is not None:
+                os.environ["VOICELAB_ANNOTATION_DIR"] = old
+
+        self.assertEqual(got, (repo_root() / "datasets" / "annotations").resolve())
+
+    def test_annotation_dir_env_override(self) -> None:
+        from pathlib import Path
+
+        from voicelab.bootstrap import resolve_annotation_dir
+
+        old = os.environ.get("VOICELAB_ANNOTATION_DIR")
+        try:
+            os.environ["VOICELAB_ANNOTATION_DIR"] = "D:/tmp/voicelab-annotations"
+            self.assertEqual(
+                resolve_annotation_dir(None),
+                Path("D:/tmp/voicelab-annotations").resolve(),
+            )
+        finally:
+            if old is None:
+                os.environ.pop("VOICELAB_ANNOTATION_DIR", None)
+            else:
+                os.environ["VOICELAB_ANNOTATION_DIR"] = old
 
 
 class TestEnsureSymlink(unittest.TestCase):

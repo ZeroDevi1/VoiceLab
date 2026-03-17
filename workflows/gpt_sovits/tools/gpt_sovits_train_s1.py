@@ -7,7 +7,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from voicelab_bootstrap import data_root, gpt_sovits_vendor_root, runtime_root
+from voicelab_bootstrap import (
+    data_root,
+    default_pretrained_s1,
+    gpt_sovits_vendor_root,
+    runtime_root,
+)
 
 
 def _run(cmd: list[str], *, cwd: Path, env: dict[str, str]) -> None:
@@ -16,15 +21,23 @@ def _run(cmd: list[str], *, cwd: Path, env: dict[str, str]) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Train GPT (stage1) for GPT-SoVITS using prepared dataset under workflow data/.")
-    ap.add_argument("--exp-name", required=True, help="Experiment name (data/<exp-name>).")
-    ap.add_argument("--version", default="v2", help="Version tag (sets env 'version'). Default: v2")
+    ap = argparse.ArgumentParser(
+        description="Train GPT (stage1) for GPT-SoVITS using prepared dataset under workflow data/."
+    )
+    ap.add_argument(
+        "--exp-name", required=True, help="Experiment name (data/<exp-name>)."
+    )
+    ap.add_argument(
+        "--version", default="v2", help="Version tag (sets env 'version'). Default: v2"
+    )
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--save-every-epoch", type=int, default=1)
     ap.add_argument("--precision", default="16-mixed", help="e.g. 16-mixed or 32")
     ap.add_argument("--gpu-numbers", default="0", help="Used as _CUDA_VISIBLE_DEVICES.")
-    ap.add_argument("--pretrained-s1", default="", help="Optional pretrained_s1 ckpt path.")
+    ap.add_argument(
+        "--pretrained-s1", default="", help="Optional pretrained_s1 ckpt path."
+    )
     ap.add_argument("--if-save-latest", type=int, default=1, choices=[0, 1])
     ap.add_argument("--if-save-every-weights", type=int, default=0, choices=[0, 1])
     ap.add_argument("--if-dpo", type=int, default=0, choices=[0, 1])
@@ -37,19 +50,28 @@ def main() -> int:
     exp_name = args.exp_name.strip()
     opt_dir = (data_root() / exp_name).resolve()
     if not opt_dir.exists():
-        raise SystemExit(f"[gpt_sovits] dataset not prepared: {opt_dir} (run gpt_sovits_prepare_dataset.py first)")
+        raise SystemExit(
+            f"[gpt_sovits] dataset not prepared: {opt_dir} (run gpt_sovits_prepare_dataset.py first)"
+        )
 
     # These are produced by prepare script (merged, not per-part).
     phoneme = opt_dir / "2-name2text.txt"
     semantic = opt_dir / "6-name2semantic.tsv"
     if not phoneme.exists() or not semantic.exists():
-        raise SystemExit(f"[gpt_sovits] missing prepared files under {opt_dir} (need 2-name2text.txt + 6-name2semantic.tsv)")
+        raise SystemExit(
+            f"[gpt_sovits] missing prepared files under {opt_dir} (need 2-name2text.txt + 6-name2semantic.tsv)"
+        )
 
     # Load vendor template then inject the keys that webui normally injects.
     # We import yaml lazily so repo-level unit tests don't require it.
     import yaml  # type: ignore
 
-    tmpl = vendor / "GPT_SoVITS" / "configs" / ("s1longer.yaml" if args.version == "v1" else "s1longer-v2.yaml")
+    tmpl = (
+        vendor
+        / "GPT_SoVITS"
+        / "configs"
+        / ("s1longer.yaml" if args.version == "v1" else "s1longer-v2.yaml")
+    )
     data = yaml.safe_load(tmpl.read_text(encoding="utf-8"))
 
     # Outputs
@@ -72,17 +94,26 @@ def main() -> int:
     data["train"]["half_weights_save_dir"] = str(weights_dir)
     data["train"]["exp_name"] = exp_name
 
-    if str(args.pretrained_s1).strip():
-        data["pretrained_s1"] = str(Path(args.pretrained_s1).expanduser().resolve())
+    pretrained_s1 = (
+        Path(args.pretrained_s1).expanduser().resolve()
+        if str(args.pretrained_s1).strip()
+        else default_pretrained_s1(str(args.version))
+    )
+    if pretrained_s1.exists():
+        data["pretrained_s1"] = str(pretrained_s1)
 
     # Dataset pointers
     data["train_semantic_path"] = str(semantic)
     data["train_phoneme_path"] = str(phoneme)
     data["output_dir"] = str(opt_dir / f"logs_s1_{args.version}")
 
-    cfg_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    cfg_path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
     # Also write a JSON mirror for quick inspection without yaml tooling.
-    (out_cfg_dir / "s1.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (out_cfg_dir / "s1.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
     env = os.environ.copy()
     env.update(
@@ -93,7 +124,12 @@ def main() -> int:
         }
     )
     _run(
-        [sys.executable, str(vendor / "GPT_SoVITS" / "s1_train.py"), "--config_file", str(cfg_path)],
+        [
+            sys.executable,
+            str(vendor / "GPT_SoVITS" / "s1_train.py"),
+            "--config_file",
+            str(cfg_path),
+        ],
         cwd=vendor,
         env=env,
     )
@@ -102,4 +138,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

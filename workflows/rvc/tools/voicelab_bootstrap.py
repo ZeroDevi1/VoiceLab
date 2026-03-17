@@ -43,7 +43,9 @@ def rvc_vendor_root() -> Path:
     candidates = [
         root / "Retrieval-based-Voice-Conversion-WebUI",
         root / "RVC",
-        root / "Retrieval-based-Voice-Conversion-WebUI" / ".",  # no-op, but keeps ordering explicit
+        root
+        / "Retrieval-based-Voice-Conversion-WebUI"
+        / ".",  # no-op, but keeps ordering explicit
     ]
     for c in candidates:
         if c.exists():
@@ -60,13 +62,15 @@ def assets_src_root() -> Path:
     """
     Where to link large RVC assets (hubert/rmvpe/pretrained) from.
 
-    Default matches the user's existing Windows-side install that is visible in WSL:
-      /mnt/c/AIGC/RVC20240604Nvidia/assets
+    Default uses the VoiceLab project-local cache:
+      <repo>/.cache/voicelab/assets/rvc
     """
     env = os.environ.get("RVC_ASSETS_SRC_DIR")
     if env:
         return Path(env).expanduser().resolve()
-    return Path("/mnt/c/AIGC/RVC20240604Nvidia/assets").resolve()
+    root_env = os.environ.get("VOICELAB_ASSETS_DIR")
+    base = (root_env or str(voicelab_root() / ".cache" / "voicelab" / "assets")).strip()
+    return (Path(base).expanduser().resolve() / "rvc").resolve()
 
 
 def ensure_runtime_pythonpath() -> dict[str, Path]:

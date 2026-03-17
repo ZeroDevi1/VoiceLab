@@ -7,7 +7,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_WORKFLOWS: list[str] = ["cosyvoice", "rvc", "msst"]
+DEFAULT_WORKFLOWS: list[str] = ["cosyvoice", "rvc", "msst", "gpt_sovits"]
 KNOWN_WORKFLOWS: set[str] = set(DEFAULT_WORKFLOWS)
 
 
@@ -46,11 +46,13 @@ def parse_workflows(value: str) -> list[str]:
 
 def resolve_assets_dir(arg: str | None) -> Path:
     env = os.environ.get("VOICELAB_ASSETS_DIR")
-    base = (
-        arg
-        or env
-        or str(repo_root() / ".cache" / "voicelab" / "assets")
-    ).strip()
+    base = (arg or env or str(repo_root() / ".cache" / "voicelab" / "assets")).strip()
+    return Path(base).expanduser().resolve()
+
+
+def resolve_annotation_dir(arg: str | None) -> Path:
+    env = os.environ.get("VOICELAB_ANNOTATION_DIR")
+    base = (arg or env or str(repo_root() / "datasets" / "annotations")).strip()
     return Path(base).expanduser().resolve()
 
 

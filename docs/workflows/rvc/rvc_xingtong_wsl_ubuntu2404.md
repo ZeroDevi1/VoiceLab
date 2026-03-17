@@ -70,15 +70,20 @@ cd "$VOICELAB_DIR/workflows/rvc"
 uv run python tools/rvc_init_runtime.py
 ```
 
-默认会从你已有的 Windows 目录链接大模型资源：
-- `/mnt/c/AIGC/RVC20240604Nvidia/assets/hubert/hubert_base.pt`
-- `/mnt/c/AIGC/RVC20240604Nvidia/assets/rmvpe/rmvpe.pt`
-- `/mnt/c/AIGC/RVC20240604Nvidia/assets/pretrained_v2/*`
+默认会从 VoiceLab 共享缓存链接大模型资源：
+- `VOICELAB_ASSETS_DIR/rvc`
+- 未设置 `VOICELAB_ASSETS_DIR` 时，默认等价于：`$VOICELAB_DIR/.cache/voicelab/assets/rvc`
 
 如需改资源位置：
 
 ```bash
 uv run python tools/rvc_init_runtime.py --assets-src /path/to/assets
+```
+
+如需显式复用外部目录，也可以设置：
+
+```bash
+export RVC_ASSETS_SRC_DIR=/path/to/assets
 ```
 
 ## 2.1（强烈推荐）把数据集复制到 WSL 原生目录（避免 /mnt/c 跨系统 I/O 瓶颈）
